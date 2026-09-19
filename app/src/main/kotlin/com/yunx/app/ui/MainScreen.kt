@@ -90,6 +90,7 @@ import com.yunx.app.data.backup.AuthBackupManager
 import com.yunx.app.data.network.BaiduApi
 import com.yunx.app.data.network.C139Api
 import com.yunx.app.data.network.Pan123Api
+import com.yunx.app.data.network.AlipanApi
 import com.yunx.app.data.network.QuarkApi
 import com.yunx.app.data.network.UCApi
 import com.yunx.app.data.network.XunleiApi
@@ -101,6 +102,8 @@ import com.yunx.app.data.repository.C139AccountRepository
 import com.yunx.app.data.repository.C139ResolveRepository
 import com.yunx.app.data.repository.Pan123AccountRepository
 import com.yunx.app.data.repository.Pan123ResolveRepository
+import com.yunx.app.data.repository.AlipanAccountRepository
+import com.yunx.app.data.repository.AlipanResolveRepository
 import com.yunx.app.data.repository.QuarkAccountRepository
 import com.yunx.app.data.repository.QuarkResolveRepository
 import com.yunx.app.data.repository.UCAccountRepository
@@ -110,6 +113,7 @@ import com.yunx.app.data.repository.XunleiResolveRepository
 import com.yunx.app.ui.login.BaiduLoginScreen
 import com.yunx.app.ui.login.C139LoginScreen
 import com.yunx.app.ui.login.Pan123LoginScreen
+import com.yunx.app.ui.login.AlipanLoginScreen
 import com.yunx.app.ui.login.QuarkLoginScreen
 import com.yunx.app.ui.login.UCLoginScreen
 import com.yunx.app.ui.login.XunleiLoginScreen
@@ -135,6 +139,7 @@ import com.yunx.app.ui.viewmodel.DownloadViewModel
 import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
 import com.yunx.app.ui.viewmodel.Pan123AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
+import com.yunx.app.ui.viewmodel.AlipanAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
 import com.yunx.app.ui.viewmodel.ResolveViewModel
@@ -169,6 +174,7 @@ fun MainScreen() {
     var showBaiduLogin by rememberSaveable { mutableStateOf(false) }
     var showC139Login by rememberSaveable { mutableStateOf(false) }
     var showPan123Login by rememberSaveable { mutableStateOf(false) }
+    var showAlipanLogin by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var showSupport by rememberSaveable { mutableStateOf(false) }
     var showTheme by rememberSaveable { mutableStateOf(false) }
@@ -208,6 +214,7 @@ fun MainScreen() {
     val baiduApi = remember { BaiduApi() }
     val c139Api = remember { C139Api() }
     val pan123Api = remember { Pan123Api() }
+    val alipanApi = remember { AlipanApi() }
     val db = remember { AppDatabase.get(context) }
     val settings = remember { SettingsRepository(context) }
     val repository = remember {
@@ -228,6 +235,9 @@ fun MainScreen() {
     val pan123Repository = remember {
         Pan123AccountRepository(db.pan123AccountDao(), pan123Api)
     }
+    val alipanRepository = remember {
+        AlipanAccountRepository(db.alipanAccountDao(), alipanApi)
+    }
     // 网盘认证备份：打包/恢复各平台凭证
     val backupManager = remember {
         AuthBackupManager(
@@ -236,7 +246,8 @@ fun MainScreen() {
             db.xunleiAccountDao(),
             db.baiduAccountDao(),
             db.c139AccountDao(),
-            db.pan123AccountDao()
+            db.pan123AccountDao(),
+            db.alipanAccountDao()
         )
     }
     // 下载管理器：OkHttp 分片下载器 + Room 任务持久化 + 可配置线程数（设置页动态生效）
@@ -440,6 +451,9 @@ fun MainScreen() {
     val pan123ViewModel: Pan123AccountViewModel = viewModel(
         factory = Pan123AccountViewModel.Factory(pan123Repository)
     )
+    val alipanViewModel: AlipanAccountViewModel = viewModel(
+        factory = AlipanAccountViewModel.Factory(alipanRepository)
+    )
     // 各平台「账号是否已登录」流：云盘浏览 VM 在启动期（未登录）init 加载会残留「请先登录…」错误态，
     // 首次登录成功后由 VM 监听该流自动重载根目录（见各 XxxCloudViewModel init）
     val quarkLoginState = remember { repository.observeAccount().map { it != null } }
@@ -448,6 +462,7 @@ fun MainScreen() {
     val baiduLoginState = remember { baiduRepository.observeAccount().map { it != null } }
     val c139LoginState = remember { c139Repository.observeAccount().map { it != null } }
     val pan123LoginState = remember { pan123Repository.observeAccount().map { it != null } }
+    val alipanLoginState = remember { alipanRepository.observeAccount().map { it != null } }
     // 夸克云盘浏览：作为网盘 Tab 内容展示（非全屏），cookie 从数据库读取（避免 StateFlow 初始值为空的竞态）；
     // 下载前经 getFreshCookie 惰性刷新 __puus（修复 AlistGo/alist#830 下载 412）
     val quarkCloudViewModel: QuarkCloudViewModel = viewModel(
@@ -556,6 +571,12 @@ fun MainScreen() {
             tokenProvider = { pan123Repository.getAccount()?.accessToken }
         )
     }
+    val alipanResolveRepository = remember {
+        AlipanResolveRepository(
+            api = alipanApi,
+            tokenProvider = { alipanRepository.getFreshAccessToken() }
+        )
+    }
     val resolveViewModel: ResolveViewModel = viewModel(
         factory = ResolveViewModel.Factory(
             repository,
@@ -570,6 +591,8 @@ fun MainScreen() {
             c139ResolveRepository,
             pan123Repository,
             pan123ResolveRepository,
+            alipanRepository,
+            alipanResolveRepository,
             downloadManager,
             db.bookmarkDao()
         )
@@ -586,6 +609,7 @@ fun MainScreen() {
     val baiduAccount by baiduViewModel.baiduAccount.collectAsState()
     val c139Account by c139ViewModel.c139Account.collectAsState()
     val pan123Account by pan123ViewModel.pan123Account.collectAsState()
+    val alipanAccount by alipanViewModel.alipanAccount.collectAsState()
 
     // 首次下载引导：锁屏保持下载默认开启，但新用户未加入「忽略电池优化」白名单 →引导一次
     var showBatteryGuide by remember { mutableStateOf(false) }
@@ -724,6 +748,16 @@ fun MainScreen() {
         return
     }
 
+    // 阿里云盘登录页：全屏覆盖（WebView 打开官网登录，提取 localStorage 的 token JSON）
+    if (showAlipanLogin) {
+        AlipanLoginScreen(
+            viewModel = alipanViewModel,
+            onBack = { showAlipanLogin = false },
+            onSaved = { showAlipanLogin = false }
+        )
+        return
+    }
+
     // 折叠标题状态提升到本层：跨页面共享，页面切换时折叠/展开状态保持不变
     // 用 exitUntilCollapsed（默认实现，含松手吸附）：滚动时标题先收起再滚内容；
     // 向上滚动回顶部过程中标题保持收起，只有列表到达最顶部后继续下拉（overscroll）才重新展开
@@ -803,6 +837,7 @@ fun MainScreen() {
                         baiduAccount = baiduAccount,
                         c139Account = c139Account,
                         pan123Account = pan123Account,
+                        alipanAccount = alipanAccount,
                         quarkCloudViewModel = quarkCloudViewModel,
                         ucCloudViewModel = ucCloudViewModel,
                         xunleiCloudViewModel = xunleiCloudViewModel,
@@ -822,7 +857,9 @@ fun MainScreen() {
                         onC139Login = { showC139Login = true },
                         onC139Logout = { c139ViewModel.logout() },
                         onPan123Login = { showPan123Login = true },
-                        onPan123Logout = { pan123ViewModel.logout() }
+                        onPan123Logout = { pan123ViewModel.logout() },
+                        onAlipanLogin = { showAlipanLogin = true },
+                        onAlipanLogout = { alipanViewModel.logout() }
                     )
                     MainTab.Download -> DownloadScreen(scrollBehavior, downloadViewModel)
                     MainTab.Settings -> SettingsScreen(

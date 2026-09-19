@@ -30,6 +30,8 @@ import com.yunx.app.data.db.C139AccountDao
 import com.yunx.app.data.db.C139AccountEntity
 import com.yunx.app.data.db.Pan123AccountDao
 import com.yunx.app.data.db.Pan123AccountEntity
+import com.yunx.app.data.db.AlipanAccountDao
+import com.yunx.app.data.db.AlipanAccountEntity
 import com.yunx.app.data.db.QuarkAccountDao
 import com.yunx.app.data.db.QuarkAccountEntity
 import com.yunx.app.data.db.UCAccountDao
@@ -56,7 +58,8 @@ class AuthBackupManager(
     private val xunleiDao: XunleiAccountDao,
     private val baiduDao: BaiduAccountDao,
     private val c139Dao: C139AccountDao,
-    private val pan123Dao: Pan123AccountDao
+    private val pan123Dao: Pan123AccountDao,
+    private val alipanDao: AlipanAccountDao
 ) {
 
     private companion object {
@@ -134,6 +137,17 @@ class AuthBackupManager(
                 JSONObject()
                     .put("platform", "pan123")
                     .put("accessToken", a.accessToken)
+                    .put("account", a.account)
+                    .put("nickname", a.nickname)
+                    .put("updatedAt", a.updatedAt)
+            )
+        }
+        alipanDao.getAccount()?.let { a ->
+            if (!onlyLoggedIn || a.refreshToken.isNotBlank()) accounts.put(
+                JSONObject()
+                    .put("platform", "alipan")
+                    .put("accessToken", a.accessToken)
+                    .put("refreshToken", a.refreshToken)
                     .put("account", a.account)
                     .put("nickname", a.nickname)
                     .put("updatedAt", a.updatedAt)
@@ -238,6 +252,21 @@ class AuthBackupManager(
                         pan123Dao.upsert(
                             Pan123AccountEntity(
                                 id = "pan123", accessToken = t,
+                                account = obj.optString("account"),
+                                nickname = obj.optString("nickname"),
+                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        ); count++
+                    }
+                }
+                "alipan" -> {
+                    val rt = obj.optString("refreshToken")
+                    if (rt.isNotBlank()) {
+                        alipanDao.upsert(
+                            AlipanAccountEntity(
+                                id = "alipan",
+                                accessToken = obj.optString("accessToken"),
+                                refreshToken = rt,
                                 account = obj.optString("account"),
                                 nickname = obj.optString("nickname"),
                                 updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())

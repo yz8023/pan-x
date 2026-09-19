@@ -30,6 +30,7 @@ import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.BaiduConstants
+import com.yunx.app.data.network.AlipanConstants
 import com.yunx.app.data.network.C139Constants
 import com.yunx.app.data.network.Pan123Constants
 import com.yunx.app.data.network.QuarkConstants
@@ -47,6 +48,8 @@ import com.yunx.app.data.repository.C139AccountRepository
 import com.yunx.app.data.repository.C139ResolveRepository
 import com.yunx.app.data.repository.Pan123AccountRepository
 import com.yunx.app.data.repository.Pan123ResolveRepository
+import com.yunx.app.data.repository.AlipanAccountRepository
+import com.yunx.app.data.repository.AlipanResolveRepository
 import com.yunx.app.data.repository.QuarkAccountRepository
 import com.yunx.app.data.repository.QuarkResolveRepository
 import com.yunx.app.data.repository.ShareResolveRepository
@@ -82,6 +85,8 @@ class ResolveViewModel(
     private val c139ResolveRepository: C139ResolveRepository,
     private val pan123AccountRepository: Pan123AccountRepository,
     private val pan123ResolveRepository: Pan123ResolveRepository,
+    private val alipanAccountRepository: AlipanAccountRepository,
+    private val alipanResolveRepository: AlipanResolveRepository,
     private val downloadManager: DownloadManager,
     private val bookmarkDao: BookmarkDao
 ) : ViewModel() {
@@ -492,13 +497,14 @@ class ResolveViewModel(
     /** 当前解析平台（QUARK / UC / XUNLEI），由链接自动检测 */
     private var currentPlatform: SharePlatform = SharePlatform.QUARK
 
-    /** 当前平台凭证（夸克/UC/百度/139 用 cookie，迅雷/123 用 access_token） */
+    /** 当前分享凭证（夸克/UC/百度/139 用 cookie，迅雷/123 用 access_token，阿里云盘用惰性刷新的 access_token） */
     private suspend fun currentCredential(): String? = when (currentPlatform) {
         SharePlatform.UC -> ucAccountRepository.getAccount()?.cookie
         SharePlatform.XUNLEI -> xunleiAccountRepository.getAccount()?.accessToken
         SharePlatform.BAIDU -> baiduAccountRepository.getAccount()?.cookie
         SharePlatform.C139 -> c139AccountRepository.getAccount()?.cookie
         SharePlatform.PAN123 -> pan123AccountRepository.getAccount()?.accessToken
+        SharePlatform.ALIPAN -> alipanAccountRepository.getFreshAccessToken()
         else -> accountRepository.getAccount()?.cookie
     }
 
@@ -508,6 +514,7 @@ class ResolveViewModel(
         SharePlatform.BAIDU -> baiduResolveRepository
         SharePlatform.C139 -> c139ResolveRepository
         SharePlatform.PAN123 -> pan123ResolveRepository
+        SharePlatform.ALIPAN -> alipanResolveRepository
         else -> resolveRepository
     }
 
@@ -517,6 +524,7 @@ class ResolveViewModel(
         SharePlatform.BAIDU -> ""
         SharePlatform.C139 -> "0"
         SharePlatform.PAN123 -> "0"
+        SharePlatform.ALIPAN -> AlipanConstants.ROOT_FILE_ID
         else -> QuarkConstants.DEFAULT_PDIR_FID
     }
 
@@ -526,6 +534,7 @@ class ResolveViewModel(
         SharePlatform.BAIDU -> "百度网盘"
         SharePlatform.C139 -> "139 网盘"
         SharePlatform.PAN123 -> "123云盘"
+        SharePlatform.ALIPAN -> "阿里云盘"
         else -> "夸克网盘"
     }
 
@@ -712,6 +721,7 @@ class ResolveViewModel(
         val isBaidu = currentPlatform == SharePlatform.BAIDU
         val isC139 = currentPlatform == SharePlatform.C139
         val isPan123 = currentPlatform == SharePlatform.PAN123
+        val isAlipan = currentPlatform == SharePlatform.ALIPAN
         val isQuark = currentPlatform == SharePlatform.QUARK
         // 下载来源平台：按平台应用下载线程数设置
         val platform = when {
@@ -720,6 +730,7 @@ class ResolveViewModel(
             isBaidu -> DownloadPlatform.BAIDU
             isC139 -> DownloadPlatform.C139
             isPan123 -> DownloadPlatform.PAN123
+            isAlipan -> DownloadPlatform.ALIPAN
             else -> DownloadPlatform.QUARK
         }
         // 【关键修复】夸克/UC 共用 __puus：取链与下载必须用同一份已刷新 Cookie（AlistGo/alist#830 类缺陷）
@@ -741,6 +752,11 @@ class ResolveViewModel(
             isPan123 -> mapOf(
                 "User-Agent" to Pan123Constants.WEB_UA,
                 "Referer" to Pan123Constants.DOWNLOAD_REFERER
+            )
+            // 阿里云盘分享直链为 CDN 签名地址，下载必须带 Referer（www.alipan.com，alist 实证）
+            isAlipan -> mapOf(
+                "User-Agent" to AlipanConstants.WEB_UA,
+                "Referer" to AlipanConstants.DOWNLOAD_REFERER
             )
             // UC：OSS 直链按 Referer 档位限速（缺 Referer 被 Callback 限到 ~100 KB/s），
             // 补官方 Web 客户端同款 Referer/Origin 即满速
@@ -824,6 +840,8 @@ class ResolveViewModel(
         private val c139ResolveRepository: C139ResolveRepository,
         private val pan123AccountRepository: Pan123AccountRepository,
         private val pan123ResolveRepository: Pan123ResolveRepository,
+        private val alipanAccountRepository: AlipanAccountRepository,
+        private val alipanResolveRepository: AlipanResolveRepository,
         private val downloadManager: DownloadManager,
         private val bookmarkDao: BookmarkDao
     ) : ViewModelProvider.Factory {
@@ -837,6 +855,7 @@ class ResolveViewModel(
                 baiduAccountRepository, baiduResolveRepository,
                 c139AccountRepository, c139ResolveRepository,
                 pan123AccountRepository, pan123ResolveRepository,
+                alipanAccountRepository, alipanResolveRepository,
                 downloadManager,
                 bookmarkDao
             ) as T

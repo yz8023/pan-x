@@ -19,7 +19,7 @@
 package com.yunx.app.data.network
 
 /** 网盘平台 */
-enum class SharePlatform { QUARK, UC, XUNLEI, BAIDU, C139, PAN123 }
+enum class SharePlatform { QUARK, UC, XUNLEI, BAIDU, C139, PAN123, ALIPAN }
 
 /**
  * 解析结果：share_id + 提取码 + 平台。
@@ -50,6 +50,8 @@ object ShareLinkParser {
     private val pan123ShareIdRegex = Regex("""123(?:865|pan)\.(?:com|cn)/s/([A-Za-z0-9]+-[A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
     private val pan123ShareSubRegex = Regex("""share\.123pan\.cn/123pan/([A-Za-z0-9-]+)""", RegexOption.IGNORE_CASE)
     private val pan123SrrRegex = Regex("""api/srr\?sk=([A-Za-z0-9-]+)""", RegexOption.IGNORE_CASE)
+    // 阿里云盘分享链接：https://www.alipan.com/s/<id> / https://www.aliyundrive.com/s/<id>
+    private val alipanShareIdRegex = Regex("""(?:alipan|aliyundrive)\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
     private val pwdInUrlRegex = Regex("""[?&]pwd=([A-Za-z0-9]+)""")
     private val pwdInTextRegex = Regex("""(?:提取码|访问码|密码)[：:]\s*([A-Za-z0-9]{4,8})""")
 
@@ -104,6 +106,12 @@ object ShareLinkParser {
             val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
                 ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
             return ParsedShare(shareId = sid, pwd = pwd, platform = SharePlatform.PAN123)
+        }
+        // 阿里云盘链接：https://www.alipan.com/s/<id>（旧域 aliyundrive.com 同构）
+        alipanShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { sid ->
+            val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
+                ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
+            return ParsedShare(shareId = sid, pwd = pwd, platform = SharePlatform.ALIPAN)
         }
         return null
     }

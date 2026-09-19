@@ -32,7 +32,9 @@ class ShareLinkParserTest {
             "https://pan.xunlei.com/s/Abc_123-xy" to (SharePlatform.XUNLEI to "Abc_123-xy"),
             "https://pan.baidu.com/s/1Abc_123-xy?pwd=9xYz" to (SharePlatform.BAIDU to "Abc_123-xy"),
             "https://yun.139.com/shareweb/#/w/i/Abc_123" to (SharePlatform.C139 to "Abc_123"),
-            "https://www.123pan.com/s/2785Vv-T4Ded" to (SharePlatform.PAN123 to "2785Vv-T4Ded")
+            "https://www.123pan.com/s/2785Vv-T4Ded" to (SharePlatform.PAN123 to "2785Vv-T4Ded"),
+            "https://www.alipan.com/s/Abc123XyZ" to (SharePlatform.ALIPAN to "Abc123XyZ"),
+            "https://www.aliyundrive.com/s/Abc123XyZ" to (SharePlatform.ALIPAN to "Abc123XyZ")
         )
 
         cases.forEach { (text, expected) ->
@@ -46,6 +48,13 @@ class ShareLinkParserTest {
     fun explicitTextPasswordIsExtracted() {
         val parsed = ShareLinkParser.parse("链接 https://drive.uc.cn/s/Abc123 提取码：a1B2")!!
         assertEquals("a1B2", parsed.pwd)
+    }
+
+    @Test
+    fun alipanTextPasswordIsExtracted() {
+        val parsed = ShareLinkParser.parse("链接 https://www.alipan.com/s/Abc123XyZ 提取码：9yZ1")!!
+        assertEquals(SharePlatform.ALIPAN, parsed.platform)
+        assertEquals("9yZ1", parsed.pwd)
     }
 
     @Test

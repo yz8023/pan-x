@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import com.yunx.app.data.db.BaiduAccountEntity
 import com.yunx.app.data.db.C139AccountEntity
 import com.yunx.app.data.db.Pan123AccountEntity
+import com.yunx.app.data.db.AlipanAccountEntity
 import com.yunx.app.data.db.QuarkAccountEntity
 import com.yunx.app.data.db.UCAccountEntity
 import com.yunx.app.data.db.XunleiAccountEntity
@@ -112,6 +113,7 @@ fun DriveScreen(
     baiduAccount: BaiduAccountEntity?,
     c139Account: C139AccountEntity?,
     pan123Account: Pan123AccountEntity?,
+    alipanAccount: AlipanAccountEntity?,
     /** 夸克云盘浏览 ViewModel（网盘 Tab 内切换展示，非全屏） */
     quarkCloudViewModel: QuarkCloudViewModel,
     /** UC 网盘云盘浏览 ViewModel */
@@ -140,6 +142,8 @@ fun DriveScreen(
     onC139Logout: () -> Unit,
     onPan123Login: () -> Unit,
     onPan123Logout: () -> Unit,
+    onAlipanLogin: () -> Unit,
+    onAlipanLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showQuarkSheet by remember { mutableStateOf(false) }
@@ -148,6 +152,7 @@ fun DriveScreen(
     var showBaiduSheet by remember { mutableStateOf(false) }
     var showC139Sheet by remember { mutableStateOf(false) }
     var showPan123Sheet by remember { mutableStateOf(false) }
+    var showAlipanSheet by remember { mutableStateOf(false) }
     // 夸克云盘浏览：网盘 Tab 内切换（非全屏），切 Tab 再回来仍保留
     var showCloud by rememberSaveable { mutableStateOf(false) }
     // UC 网盘云盘浏览：网盘 Tab 内切换（非全屏）
@@ -203,6 +208,13 @@ fun DriveScreen(
         description = pan123Account?.nickname ?: "点击登录，支持解析下载",
         avatarText = "123",
         isLoggedIn = pan123Account != null
+    )
+    val alipan = DriveAccount(
+        id = "alipan",
+        name = "阿里云盘",
+        description = alipanAccount?.nickname ?: "点击登录，支持解析下载",
+        avatarText = "云",
+        isLoggedIn = alipanAccount != null
     )
     val others = remember {
         emptyList<DriveAccount>()
@@ -385,6 +397,23 @@ fun DriveScreen(
                         }
                     )
                 }
+                item(key = alipan.id) {
+                    // 阿里云盘暂无个人云盘浏览（需设备签名），已登录点击卡片直接打开账号弹窗
+                    DriveAccountCard(
+                        account = alipan,
+                        quota = null,
+                        onClick = if (alipan.isLoggedIn) {
+                            { showAlipanSheet = true }
+                        } else {
+                            onAlipanLogin
+                        },
+                        onMoreClick = if (alipan.isLoggedIn) {
+                            { showAlipanSheet = true }
+                        } else {
+                            null
+                        }
+                    )
+                }
                 items(others, key = { it.id }) { account ->
                     DriveAccountCard(account = account)
                 }
@@ -462,6 +491,18 @@ fun DriveScreen(
                 showPan123Sheet = false
             },
             onDismiss = { showPan123Sheet = false }
+        )
+    }
+
+    // 已登录阿里云盘：点击卡片弹出账号信息底部弹窗
+    if (showAlipanSheet && alipanAccount != null) {
+        AlipanAccountSheet(
+            account = alipanAccount,
+            onLogout = {
+                onAlipanLogout()
+                showAlipanSheet = false
+            },
+            onDismiss = { showAlipanSheet = false }
         )
     }
 }

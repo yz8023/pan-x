@@ -12,14 +12,15 @@
 - 123云盘
 - 139 网盘（和彩云）
 - 123 云盘
+- 阿里云盘（分享解析 + 直链下载）
 - ~~其他网盘懒得写了，如有需要请打开一个issue~~
 
 ## 功能
 
-- **分享链接解析**：识别夸克 / UC / 迅雷 / 百度 / 139 / 123 的分享链接，自动匹配提取码
+- **分享链接解析**：识别夸克 / UC / 迅雷 / 百度 / 139 / 123 / 阿里云盘 的分享链接，自动匹配提取码
 - **高速下载**：Range 分片并发 + 断点续传，任务保存请求头与固定分片规划，并发上限 32
 - **临时转存清理**：百度/迅雷取链后清理；夸克保留到下载完成或删除任务后清理
-- **登录**：夸克 / UC / 百度 / 139 使用 WebView Cookie；迅雷使用密码/短信；123 使用账号密码换取 JWT
+- **登录**：夸克 / UC / 百度 / 139 使用 WebView Cookie；迅雷使用密码/短信；123 使用账号密码换取 JWT；阿里云盘使用网页登录提取 refresh_token（自动换 access_token）
 - **认证备份**：使用用户口令派生密钥，以 AES-GCM 加密 Cookie/JWT 备份文件
 - **剪贴板识别**：复制分享链接后回到应用，提示一键粘贴解析
 
@@ -69,6 +70,18 @@ git clone https://github.com/CYQawa/YunX.git
 ## 关于协议逆向
 
 部分网盘平台的解析基于抓包分析与开源项目（如 alist）的协议研究整理，接口可能随官方调整而失效，请以实际运行结果为准。
+
+## 参考与致敬
+
+阿里云盘解析实现参考了以下开源项目：
+
+- [alist](https://github.com/AlistGo/alist)（Xhofe 等）——`aliyundrive_share` 驱动：分享 token / 分享列表 / 分享下载直链协议
+- [aliyunpan-api](https://github.com/tickstep/aliyunpan-api)（tickstep）——`aliyunpan-web`：OAuth refresh_token 换 access_token 与分享信息接口
+- [Online-disk-direct-link-download-assistant](https://github.com/hmjz100/Online-disk-direct-link-download-assistant)（hmjz100）—— 网盘直链解析思路
+- [STARSHINE56](https://github.com/StarAssistant/STARSHINE56)（StarAssistant）—— 网盘协议研究参考
+- [YunX](https://github.com/CYQawa/YunX)（CYQawa）—— 本项目的上游：整体架构、夸克/UC/迅雷/百度/139/123 解析与下载实现
+
+感谢以上项目的作者与社区。
 
 # 耻辱榜
 **倒卖的你是活不起了是吗😂**

@@ -98,6 +98,17 @@ internal object SecureAccountDaos {
         override suspend fun clear() = raw.clear()
     }
 
+    fun alipan(raw: AlipanAccountDao, cipher: CredentialCipher): AlipanAccountDao = object : AlipanAccountDao {
+        override fun observeAccount(): Flow<AlipanAccountEntity?> = raw.observeAccount().map { value ->
+            value?.let { decryptAlipan(raw, cipher, it) }
+        }
+        override suspend fun upsert(account: AlipanAccountEntity) = withContext(Dispatchers.IO) {
+            raw.upsert(encryptAlipan(cipher, account))
+        }
+        override suspend fun getAccount(): AlipanAccountEntity? = raw.getAccount()?.let { decryptAlipan(raw, cipher, it) }
+        override suspend fun clear() = raw.clear()
+    }
+
     private suspend fun decryptQuark(raw: QuarkAccountDao, cipher: CredentialCipher, stored: QuarkAccountEntity): QuarkAccountEntity? =
         withContext(Dispatchers.IO) {
             decryptOrClear(raw::clear) {
@@ -164,6 +175,20 @@ internal object SecureAccountDaos {
             }
         }
 
+    private suspend fun decryptAlipan(raw: AlipanAccountDao, cipher: CredentialCipher, stored: AlipanAccountEntity): AlipanAccountEntity? =
+        withContext(Dispatchers.IO) {
+            decryptOrClear(raw::clear) {
+                val plain = stored.copy(
+                    accessToken = cipher.decrypt(stored.accessToken, "alipan.accessToken"),
+                    refreshToken = cipher.decrypt(stored.refreshToken, "alipan.refreshToken")
+                )
+                if (!cipher.isEncrypted(stored.accessToken) || !cipher.isEncrypted(stored.refreshToken)) {
+                    raw.upsert(encryptAlipan(cipher, plain))
+                }
+                plain
+            }
+        }
+
     private fun encryptQuark(cipher: CredentialCipher, value: QuarkAccountEntity) =
         value.copy(cookie = cipher.encrypt(value.cookie, "quark.cookie"))
     private fun encryptUc(cipher: CredentialCipher, value: UCAccountEntity) =
@@ -181,6 +206,10 @@ internal object SecureAccountDaos {
         refreshToken = cipher.encrypt(value.refreshToken, "xunlei.refreshToken"),
         deviceId = cipher.encrypt(value.deviceId, "xunlei.deviceId"),
         captchaToken = cipher.encrypt(value.captchaToken, "xunlei.captchaToken")
+    )
+    private fun encryptAlipan(cipher: CredentialCipher, value: AlipanAccountEntity) = value.copy(
+        accessToken = cipher.encrypt(value.accessToken, "alipan.accessToken"),
+        refreshToken = cipher.encrypt(value.refreshToken, "alipan.refreshToken")
     )
 
     private suspend fun <T> decryptOrClear(clear: suspend () -> Unit, block: suspend () -> T): T? =
