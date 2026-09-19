@@ -47,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Button
@@ -81,6 +82,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.yunx.app.data.network.ShareLinkParser
 import com.yunx.app.data.network.SharePlatform
+import com.yunx.app.data.prefs.ResolveHistoryItem
+import com.yunx.app.data.prefs.ResolveHistoryRepository
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.ShareDetailScreen
@@ -119,6 +122,23 @@ fun ResolveScreen(
     val downloadLink = viewModel.downloadLink
     val downloadError = viewModel.downloadError
     val context = LocalContext.current
+
+    // 最近解析记录：解析成功过的分享链接自动入历史，支持点击重新解析 / 删除
+    val historyRepository = remember {
+        ResolveHistoryRepository(context.applicationContext)
+    }
+    var recentHistory by remember {
+        mutableStateOf(historyRepository.load())
+    }
+
+    // 解析并写入历史（仅识别为分享链接时记录；记录保留最近 30 条）
+    fun resolveAndRemember(rawLink: String, password: String?) {
+        val parsed = ShareLinkParser.parse(rawLink)
+        if (parsed != null) {
+            recentHistory = historyRepository.add(rawLink, password ?: parsed.pwd)
+        }
+        viewModel.startResolve(rawLink, password)
+    }
 
     // 详情页文件列表滚动状态（提升到 AnimatedContent 外层：进入文件夹/返回时列表重建，
     // 若放在 ShareDetailScreen 内会随目录切换丢失，导致返回后列表回到顶部）
@@ -246,7 +266,24 @@ fun ResolveScreen(
                         pwd = ""
                         pwdEdited = false
                     },
-                    onClearPwd = { pwd = "" }
+                    onClearPwd = { pwd = "" },
+                    recentHistory = recentHistory,
+                    onStartResolve = { rawLink, password ->
+                        resolveAndRemember(rawLink, password)
+                    },
+                    onHistorySelect = { item ->
+                        link = item.link
+                        pwd = item.password
+                        pwdEdited = true
+                        resolveAndRemember(item.link, item.password.ifBlank { null })
+                    },
+                    onRemoveHistory = { item ->
+                        recentHistory = historyRepository.remove(item)
+                    },
+                    onClearHistory = {
+                        historyRepository.clear()
+                        recentHistory = emptyList()
+                    }
                 )
             }
         }
@@ -279,7 +316,7 @@ fun ResolveScreen(
                         pwd = parsed?.pwd.orEmpty()
                         pwdEdited = true
                         clipboardSuggestion = null
-                        viewModel.startResolve(suggestion, parsed?.pwd)
+                        resolveAndRemember(suggestion, parsed?.pwd)
                     },
                     onDismiss = {
                         ignoredClipboard = suggestion
@@ -333,7 +370,12 @@ private fun ResolveInputContent(
     pwd: String,
     onPwdChange: (String) -> Unit,
     onClearLink: () -> Unit,
-    onClearPwd: () -> Unit
+    onClearPwd: () -> Unit,
+    recentHistory: List<ResolveHistoryItem>,
+    onStartResolve: (String, String?) -> Unit,
+    onHistorySelect: (ResolveHistoryItem) -> Unit,
+    onRemoveHistory: (ResolveHistoryItem) -> Unit,
+    onClearHistory: () -> Unit
 ) {
     val isLoading = state is ResolveUiState.Loading
 
@@ -387,7 +429,7 @@ private fun ResolveInputContent(
         )
 
         Button(
-            onClick = { viewModel.startResolve(link, pwd) },
+            onClick = { onStartResolve(link, pwd.ifBlank { null }) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -428,6 +470,90 @@ private fun ResolveInputContent(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 }
+            }
+        }
+
+        // 最近解析记录：点击重新解析；右侧删除单条 / 一键清空
+        if (recentHistory.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "最近解析",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearHistory) {
+                    Text("清空", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            recentHistory.take(10).forEach { item ->
+                ResolveHistoryRow(
+                    item = item,
+                    onClick = { onHistorySelect(item) },
+                    onDelete = { onRemoveHistory(item) }
+                )
+            }
+        }
+    }
+}
+
+/** 最近解析单条记录：点击重新解析，右侧删除 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResolveHistoryRow(
+    item: ResolveHistoryItem,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Link,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = buildString {
+                        append(item.platformName)
+                        if (item.password.isNotBlank()) {
+                            append(" · 提取码 ")
+                            append(item.password)
+                        }
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Text(
+                    text = item.link,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = "删除记录",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

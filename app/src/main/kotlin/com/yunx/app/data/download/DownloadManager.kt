@@ -19,6 +19,8 @@
 package com.yunx.app.data.download
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.yunx.app.util.LogRedactor
 import com.yunx.app.data.db.DownloadTaskDao
@@ -61,7 +63,8 @@ import kotlin.math.min
 data class DownloadStats(
     val speed: Long = 0L,        // 字节/秒
     val remainMillis: Long = -1L, // 剩余时间（毫秒），未知为 -1
-    val chunkCount: Int = 1       // 分片（线程）数
+    val chunkCount: Int = 1,      // 分片（线程）数
+    val phase: String = ""        // 等待队列 / 等待网络 / 重新获取链接 / 下载中 / 合并中 / 保存中
 )
 
 private const val TAG = "YunX-DL"
@@ -169,6 +172,8 @@ class DownloadManager(
     private val speedLimitProvider: () -> Long = { 0L },
     /** 下载失败后自动重试次数提供者（默认 3，上限 10） */
     private val retryCountProvider: () -> Int = { 3 },
+    /** 仅 Wi-Fi 下载开关；开启时移动网络进入等待，切回 Wi-Fi 自动续传。 */
+    private val wifiOnlyProvider: () -> Boolean = { false },
     /** 锁屏后保持下载开关（开启时获取 WakeLock 维持 Wi-Fi/CPU） */
     private val keepWhenLockedProvider: () -> Boolean = { true },
     /** 通知栏显示下载速度开关（false 时仅显示通知，隐藏速度） */
@@ -189,6 +194,9 @@ class DownloadManager(
      * 授权后会自动继续保存（同一协程 await 授权结果再往下走）。
      */
     var storagePermissionProvider: suspend () -> Boolean = { true }
+
+    /** 临时下载直链刷新器：仅使用任务持久化的合法来源身份重新调用对应网盘 API。 */
+    var sourceRefresher: DownloadSourceRefresher = { null }
 
     /**
      * 运行中的任务 Job：value 为 CompletableDeferred，注册/移除全程由 jobsLock 保护，
@@ -277,6 +285,13 @@ class DownloadManager(
     private val _stats = MutableStateFlow<Map<Long, DownloadStats>>(emptyMap())
     val stats: StateFlow<Map<Long, DownloadStats>> = _stats.asStateFlow()
 
+    private fun updatePhase(id: Long, phase: String) {
+        _stats.update { current ->
+            val old = current[id] ?: DownloadStats()
+            current + (id to old.copy(phase = phase))
+        }
+    }
+
     /** 进度落盘节流（毫秒）：updateProgress 写库会触发全表 Flow 重发 → 主线程全列表重组；
      *  按字节（256KB）节流时高速下载每秒写库几十次，主线程重组洪峰 → ANR。
      *  改为按时间节流落盘，UI 进度由内存 _stats 高频展示、DB 低频持久化（断点续传最多丢几百 ms 进度）。 */
@@ -293,6 +308,12 @@ class DownloadManager(
         size: Long = -1L,
         /** 下载来源平台标识（按平台应用下载线程数设置）；通用/手动添加传空串 */
         platform: String = "",
+        sourceFileId: String = "",
+        sourceType: String = "",
+        sourceContext: String = "",
+        urlExpiresAt: Long = 0L,
+        etag: String = "",
+        lastModified: String = "",
         /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发 */
         onComplete: suspend () -> Unit = {}
     ): Long {
@@ -307,7 +328,13 @@ class DownloadManager(
                 url = url,
                 fileName = safeName,
                 requestHeadersJson = encodeHeaders(headers),
-                platform = platform
+                platform = platform,
+                sourceFileId = sourceFileId,
+                sourceType = sourceType,
+                sourceContext = sourceContext,
+                urlExpiresAt = urlExpiresAt,
+                etag = etag,
+                lastModified = lastModified
             )
         )
         // 保存请求头（Cookie/UA），暂停后恢复仍需携带
@@ -318,16 +345,59 @@ class DownloadManager(
         return id
     }
 
+    suspend fun enqueue(
+        source: CloudDownloadSource,
+        onComplete: suspend () -> Unit = {}
+    ): Long = enqueue(
+        url = source.url,
+        fileName = source.fileName,
+        headers = source.headers,
+        size = source.fileSize,
+        platform = source.platform,
+        sourceFileId = source.sourceFileId,
+        sourceType = source.sourceType,
+        sourceContext = source.sourceContext,
+        urlExpiresAt = source.urlExpiresAt,
+        etag = source.etag,
+        lastModified = source.lastModified,
+        onComplete = onComplete
+    )
+
     /**
-     * 重新下载：用原直链新建任务（任务卡长按菜单「重新下载」）。
-     * 先做 Range 探测校验直链有效性：403/404/网络错误视为直链已过期，返回 false 由 UI 提示。
+     * 重新下载：优先复用仍有效的直链；个人网盘直链已失效时自动重新取链后再新建任务。
+     * 分享链接目前缺少完整分享会话上下文，仍保持安全失败，不猜测/绕过来源校验。
      */
     suspend fun redownload(id: Long): Boolean {
-        val task = dao.get(id) ?: return false
-        val headers = loadPersistedHeaders(id)
-        val valid = runCatching { downloader.getTotalSize(task.url, headers) != null }.getOrDefault(false)
-        if (!valid) return false
-        enqueue(task.url, task.fileName, headers, task.totalSize, task.platform)
+        var task = dao.get(id) ?: return false
+        var headers = loadPersistedHeaders(id)
+
+        var probedSize = runCatching { downloader.getTotalSize(task.url, headers) }.getOrNull()
+        if (
+            probedSize == null &&
+            task.sourceType == DownloadSourceType.CLOUD &&
+            task.sourceFileId.isNotBlank() &&
+            tryRefreshSource(id, "redownload")
+        ) {
+            task = dao.get(id) ?: return false
+            headers = loadPersistedHeaders(id)
+            probedSize = runCatching { downloader.getTotalSize(task.url, headers) }.getOrNull()
+        }
+
+        if (probedSize == null) return false
+
+        enqueue(
+            url = task.url,
+            fileName = task.fileName,
+            headers = headers,
+            size = probedSize.takeIf { it > 0 } ?: task.totalSize,
+            platform = task.platform,
+            sourceFileId = task.sourceFileId,
+            sourceType = task.sourceType,
+            sourceContext = task.sourceContext,
+            urlExpiresAt = task.urlExpiresAt,
+            etag = task.etag,
+            lastModified = task.lastModified
+        )
         return true
     }
 
@@ -349,8 +419,13 @@ class DownloadManager(
             }
             val deferred = CompletableDeferred<Job>()
             activeJobs[id] = deferred
+            updatePhase(id, "等待队列")
             val job = scope.launch {
                 try {
+                    // 用户明确开始/恢复：清除“手动暂停”标志和上一次失败文案。
+                    // 避免恢复后 DB 仍残留 manualPaused=true / 旧 errorMsg。
+                    dao.updateManualPaused(id, false)
+                    dao.updateError(id, "")
                     // 任务开始：有任务在下载时保持前台服务（避免切后台限速/进程被杀）
                     onTaskStarted(id)
                     // 任务级互斥：同一任务串行执行，暂停后立刻恢复不会并发写分片
@@ -372,7 +447,7 @@ class DownloadManager(
                     if (isTaskActive()) {
                         Log.e(TAG, "task $id failed: ${e.message ?: e.javaClass.simpleName}", e)
                         dao.updateStatus(id, DownloadTaskEntity.STATUS_FAILED)
-                        dao.updateError(id, e.message ?: e.javaClass.simpleName)
+                        dao.updateError(id, DownloadFailurePolicy.userMessage(e))
                     } else {
                         Log.w(TAG, "task $id cancelled: ${e.message}")
                     }
@@ -440,6 +515,7 @@ class DownloadManager(
         val deferred = synchronized(jobsLock) { activeJobs.remove(id) }
         _stats.update { it - id }
         scope.launch {
+            dao.updateManualPaused(id, true)
             // 等协程真正退出（确保没有半截写入）后，以磁盘 part/seg 真实大小为准回写进度：
             // 暂停瞬间最后一次 onBytes 可能被取消丢弃，DB 落后于磁盘 → 恢复时进度回跳
             deferred?.let { runCatching { it.await().cancelAndJoin() } }
@@ -521,12 +597,80 @@ class DownloadManager(
     /** 当前协程是否仍活跃（暂停/删除触发取消后为 false） */
     private suspend fun isTaskActive(): Boolean = coroutineContext[Job]?.isActive == true
 
+    private fun isNetworkAvailable(): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return true
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        if (!validated) return false
+        return !wifiOnlyProvider() ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    private fun networkWaitText(): String =
+        if (wifiOnlyProvider()) "仅 Wi-Fi 下载：等待 Wi-Fi…" else "网络已断开，等待网络恢复…"
+
+    private fun networkWaitPhase(): String =
+        if (wifiOnlyProvider()) "等待 Wi-Fi" else "等待网络"
+
+    /**
+     * 网络断开时等待系统恢复网络；用户暂停/删除会取消当前协程并立即退出等待。
+     * 等待阶段不消耗失败重试次数。
+     */
+    private suspend fun awaitNetworkIfNeeded(id: Long) {
+        var waiting = false
+        while (isTaskActive() && !isNetworkAvailable()) {
+            if (!waiting) {
+                waiting = true
+                dao.updateError(id, networkWaitText())
+                updatePhase(id, networkWaitPhase())
+                Log.d(TAG, "networkWait: id=$id waiting")
+            }
+            delay(1000L)
+        }
+        if (waiting && isTaskActive()) {
+            dao.updateError(id, "")
+            updatePhase(id, "等待队列")
+            Log.d(TAG, "networkWait: id=$id recovered")
+        }
+    }
+
+    /**
+     * App 进程被系统结束后，Room 中可能残留 PENDING / DOWNLOADING。
+     * 再次进入应用时把这些任务恢复到安全状态，并自动续传非手动暂停任务。
+     */
+    suspend fun recoverInterruptedTasks() {
+        cleanupOrphanTempFiles()
+        val interrupted = dao.getInterruptedTasks()
+        if (interrupted.isEmpty()) return
+        Log.d(TAG, "recoverInterruptedTasks: count=${interrupted.size}")
+        interrupted.forEach { task ->
+            dao.updateProgress(
+                task.id,
+                DownloadTaskEntity.STATUS_PAUSED,
+                task.downloadedSize,
+                task.totalSize
+            )
+        }
+        interrupted
+            .filter { !it.manualPaused }
+            .forEach { task -> start(task.id) }
+    }
+
     /** 等待并发许可：当前下载任务数 >= 上限时轮询等待（暂停/取消可退出等待） */
-    private suspend fun awaitConcurrencySlot() {
+    private suspend fun awaitConcurrencySlot(id: Long) {
         val max = concurrencyProvider().coerceAtLeast(1)
+        var queued = false
         while (isTaskActive() && activeDownloads.get() >= max) {
+            if (!queued) {
+                queued = true
+                updatePhase(id, "等待队列")
+            }
             delay(300)
         }
+        if (isTaskActive()) updatePhase(id, "检查下载源")
     }
 
     /**
@@ -535,19 +679,48 @@ class DownloadManager(
      */
     private suspend fun runTaskWithRetry(id: Long, headers: Map<String, String>) {
         var attempts = 0
+        var currentHeaders = headers
         val maxRetries = retryCountProvider().coerceIn(0, 10)
         while (true) {
+            // 无网络时保持任务并等待；网络恢复后从现有 part/seg 继续，不消耗普通失败重试次数。
+            awaitNetworkIfNeeded(id)
+            if (!isTaskActive()) return
             // 并发许可：排队等待，直到有空闲下载槽位（或任务被暂停/取消）
-            awaitConcurrencySlot()
+            awaitConcurrencySlot(id)
             if (!isTaskActive()) return
             activeDownloads.incrementAndGet()
             try {
                 try {
-                    runTask(id, headers)
+                    val taskBeforeRun = dao.get(id)
+                    if (
+                        taskBeforeRun != null &&
+                        DownloadSourceRefreshPolicy.shouldRefreshBeforeStart(taskBeforeRun.urlExpiresAt) &&
+                        tryRefreshSource(id, "expiresAt/preemptive")
+                    ) {
+                        currentHeaders = loadPersistedHeaders(id)
+                    }
+                    runTask(id, currentHeaders)
                     return
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    val expiredStatus = downloader.consumeSourceExpiryFailure(id)
+                    if (
+                        expiredStatus != null &&
+                        isTaskActive() &&
+                        tryRefreshSource(id, "HTTP $expiredStatus")
+                    ) {
+                        currentHeaders = loadPersistedHeaders(id)
+                        attempts = 0
+                        Log.d(TAG, "runTaskWithRetry: id=$id 已刷新临时直链，保留分片继续下载")
+                        continue
+                    }
+                    if (DownloadFailurePolicy.isNetworkFailure(e) && !isNetworkAvailable()) {
+                        dao.updateError(id, networkWaitText())
+                        updatePhase(id, networkWaitPhase())
+                        Log.d(TAG, "runTaskWithRetry: id=$id 网络不可用，等待恢复后续传")
+                        continue
+                    }
                     attempts++
                     if (isTaskActive() && attempts <= maxRetries) {
                         Log.d(TAG, "runTaskWithRetry: id=$id 失败，自动重试 $attempts/$maxRetries：${e.message}")
@@ -563,11 +736,54 @@ class DownloadManager(
         }
     }
 
+    private suspend fun tryRefreshSource(id: Long, reason: String): Boolean {
+        val task = dao.get(id) ?: return false
+        if (task.sourceType != DownloadSourceType.CLOUD) return false
+        if (task.sourceFileId.isBlank()) return false
+        if (task.refreshCount >= DownloadSourceRefreshPolicy.MAX_REFRESH_COUNT) {
+            Log.w(TAG, "refreshSource: id=$id 已达到刷新上限 ${task.refreshCount}")
+            return false
+        }
+
+        updatePhase(id, "重新获取链接")
+        val refreshed = runCatching { sourceRefresher(task) }
+            .onFailure { Log.w(TAG, "refreshSource: id=$id 重新取链失败：${it.message}") }
+            .getOrNull()
+            ?: return false
+
+        if (refreshed.url.isBlank()) return false
+
+        val oldSize = task.totalSize.takeIf { it > 0 }
+        val newSize = refreshed.fileSize.takeIf { it > 0 }
+        if (oldSize != null && newSize != null && oldSize != newSize) {
+            Log.w(TAG, "refreshSource: id=$id 文件大小变化 old=$oldSize new=$newSize，拒绝续传")
+            return false
+        }
+
+        val encryptedHeaders = encodeHeaders(refreshed.headers)
+        dao.updateRefreshedSource(
+            id = id,
+            url = refreshed.url,
+            encryptedHeaders = encryptedHeaders,
+            sourceContext = refreshed.sourceContext.ifBlank { task.sourceContext },
+            urlExpiresAt = refreshed.urlExpiresAt,
+            etag = refreshed.etag,
+            lastModified = refreshed.lastModified
+        )
+        taskHeaders[id] = refreshed.headers
+        if (newSize != null) taskSizes[id] = newSize
+        dao.updateError(id, "")
+        Log.d(TAG, "refreshSource: id=$id reason=$reason count=${task.refreshCount + 1}")
+        updatePhase(id, "检查下载源")
+        return true
+    }
+
     private suspend fun runTask(id: Long, headers: Map<String, String>) {
         // 协程已被取消（暂停/删除）：直接退出，不写状态
         if (!isTaskActive()) return
         val task = dao.get(id) ?: return
         dao.updateStatus(id, DownloadTaskEntity.STATUS_DOWNLOADING)
+        updatePhase(id, "下载中")
         taskStartTimes[id] = System.currentTimeMillis()
         Log.d(TAG, "runTask: id=$id fileName=${task.fileName}")
 
@@ -902,7 +1118,8 @@ class DownloadManager(
         if (!isTaskActive()) return
         dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, task.downloadedSize, 0)
         if (!isTaskActive()) return
-        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        updatePhase(id, "下载中")
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
         val chunkDir = chunkDirOf(id).apply { mkdirs() }
         val partFile = File(chunkDir, "part_0")
         val downloaded = AtomicLong(partFile.length())
@@ -948,7 +1165,8 @@ class DownloadManager(
     /** HLS（m3u8 转码流，如 UC play）下载：拉取分片合并 → 保存 → 完成回调 */
     private suspend fun hlsDownload(id: Long, task: DownloadTaskEntity, headers: Map<String, String>) {
         if (!isTaskActive()) return
-        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        updatePhase(id, "下载中")
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1, "下载中")) }
         val hlsFile = File(context.cacheDir, "hls_$id")
         hlsFile.delete()
         val downloaded = AtomicLong(0)
@@ -969,12 +1187,14 @@ class DownloadManager(
             hlsFile.delete()
             throw IllegalStateException("未授予存储权限，无法保存到下载目录")
         }
+        updatePhase(id, "保存中")
         val savedPath = withContext(Dispatchers.IO) {
             DownloadSaver.save(context, task.fileName, hlsFile, saveDirProvider())
         }
             ?: throw IllegalStateException("保存到下载目录失败")
         val hlsTotal = dao.get(id)?.totalSize ?: 0L
         completeWithAvg(id, savedPath, hlsTotal)
+        DownloadService.notifyCompleted(context, task.fileName)
         Log.d(TAG, "hlsDownload: id=$id 下载完成 savedPath=$savedPath size=${hlsFile.length()}")
         taskCallbacks.remove(id)?.let { cb -> runCatching { cb() } }
         _stats.update { it - id }
@@ -1001,6 +1221,7 @@ class DownloadManager(
             }
         }
         // 2) 合并
+        updatePhase(id, "合并中")
         // ★ 合并产物放内部缓存（data 分区，非 FUSE 挂载）：大文件 IO 快得多；保存完成即删
         val merged = File(context.cacheDir, "merged_$id")
         if (!downloader.mergeChunks(chunkFiles, merged)) {
@@ -1021,11 +1242,13 @@ class DownloadManager(
         // 5) 保存（自定义目录经 SAF 写入；默认目录走 MediaStore/传统路径）
         // ★ 同步阻塞拷贝必须切 IO 线程：任务跑在 Dispatchers.Default（CPU 池），
         //   大文件保存若占满 Default 线程会让整个下载器协程饿死（"100% 卡死保存不了"）
+        updatePhase(id, "保存中")
         val savedPath = withContext(Dispatchers.IO) {
             DownloadSaver.save(context, fileName, merged, saveDirProvider())
         }
             ?: throw IllegalStateException("保存到下载目录失败")
         completeWithAvg(id, savedPath, total)
+        DownloadService.notifyCompleted(context, fileName)
         Log.d(TAG, "finishDownload: id=$id 下载完成 savedPath=$savedPath size=${merged.length()}")
         taskCallbacks.remove(id)?.let { cb ->
             runCatching { cb() }
@@ -1107,6 +1330,33 @@ class DownloadManager(
     /** 下载临时文件缓存根目录：外部缓存（/storage/emulated/0/Android/data/com.yunx.app/cache），
      *  与最终保存目录解耦，系统可自动清理；外部存储不可用时回退内部缓存目录。 */
     private fun cacheBase(): File = context.externalCacheDir ?: context.cacheDir
+
+    /**
+     * 只清理“不再对应任何数据库任务”的孤儿缓存，绝不删除仍存在任务的 part/seg。
+     */
+    private suspend fun cleanupOrphanTempFiles() = withContext(Dispatchers.IO) {
+        val liveIds = runCatching { dao.getAllTaskIds().toSet() }.getOrElse { return@withContext }
+        val root = File(cacheBase(), "download_tmp")
+        root.listFiles()?.forEach { child ->
+            val id = child.name.toLongOrNull()
+            if (id != null && id !in liveIds) {
+                runCatching { child.deleteRecursively() }
+            }
+        }
+
+        context.cacheDir.listFiles()?.forEach { file ->
+            val id = when {
+                file.name.startsWith("merged_") ->
+                    file.name.removePrefix("merged_").toLongOrNull()
+                file.name.startsWith("hls_") ->
+                    file.name.removePrefix("hls_").toLongOrNull()
+                else -> null
+            }
+            if (id != null && id !in liveIds) {
+                runCatching { file.deleteRecursively() }
+            }
+        }
+    }
 
     /** 分片临时文件目录：cacheBase()/download_tmp/$id */
     private fun chunkDirOf(id: Long): File = File(cacheBase(), "download_tmp/$id")

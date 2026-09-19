@@ -86,6 +86,13 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean("keep_download_when_locked", value).apply()
         }
 
+    /** 仅 Wi-Fi 下载：开启后移动网络下任务进入等待，切回 Wi-Fi 自动续传（默认关闭） */
+    var wifiOnlyDownload: Boolean
+        get() = prefs.getBoolean("wifi_only_download", false)
+        set(value) {
+            prefs.edit().putBoolean("wifi_only_download", value).apply()
+        }
+
     /** 通知栏进度样式：true=完整通知（进度条+下载速度）；false=仅显示通知（隐藏速度） */
     var notificationShowSpeed: Boolean
         get() = prefs.getBoolean("notification_show_speed", true)

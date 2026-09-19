@@ -44,6 +44,33 @@ interface DownloadTaskDao {
     @Query("UPDATE download_task SET requestHeadersJson = :encryptedHeaders WHERE id = :id")
     suspend fun updateRequestHeaders(id: Long, encryptedHeaders: String)
 
+    @Query(
+        "UPDATE download_task SET " +
+            "url = :url, requestHeadersJson = :encryptedHeaders, " +
+            "sourceContext = :sourceContext, urlExpiresAt = :urlExpiresAt, " +
+            "etag = :etag, lastModified = :lastModified, " +
+            "refreshCount = refreshCount + 1, errorMsg = '' " +
+            "WHERE id = :id"
+    )
+    suspend fun updateRefreshedSource(
+        id: Long,
+        url: String,
+        encryptedHeaders: String,
+        sourceContext: String,
+        urlExpiresAt: Long,
+        etag: String,
+        lastModified: String
+    )
+
+    @Query("SELECT * FROM download_task WHERE status = 0 OR status = 1 ORDER BY createTime ASC")
+    suspend fun getInterruptedTasks(): List<DownloadTaskEntity>
+
+    @Query("SELECT id FROM download_task")
+    suspend fun getAllTaskIds(): List<Long>
+
+    @Query("UPDATE download_task SET manualPaused = :manualPaused WHERE id = :id")
+    suspend fun updateManualPaused(id: Long, manualPaused: Boolean)
+
     @Query("UPDATE download_task SET status = 2 WHERE status = 1 OR status = 0")
     suspend fun markInterruptedAsPaused()
 
@@ -53,8 +80,14 @@ interface DownloadTaskDao {
     @Query("UPDATE download_task SET errorMsg = :errorMsg WHERE id = :id")
     suspend fun updateError(id: Long, errorMsg: String)
 
-    @Query("UPDATE download_task SET status = :status, savePath = :savePath, avgSpeed = :avgSpeed WHERE id = :id")
-    suspend fun complete(id: Long, status: Int, savePath: String, avgSpeed: Long = 0L)
+    @Query("UPDATE download_task SET status = :status, savePath = :savePath, avgSpeed = :avgSpeed, completedTime = :completedTime WHERE id = :id")
+    suspend fun complete(
+        id: Long,
+        status: Int,
+        savePath: String,
+        avgSpeed: Long = 0L,
+        completedTime: Long = System.currentTimeMillis()
+    )
 
     @Query("DELETE FROM download_task WHERE id = :id")
     suspend fun delete(id: Long)

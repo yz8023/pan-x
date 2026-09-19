@@ -53,9 +53,36 @@ data class DownloadTaskEntity(
     /** 下载来源平台标识（用于按平台应用下载线程数设置）；通用/手动添加为空串 */
     @ColumnInfo(defaultValue = "''")
     val platform: String = "",
+    /** 原网盘文件 ID：临时下载 URL 失效后用于重新获取直链 */
+    @ColumnInfo(defaultValue = "''")
+    val sourceFileId: String = "",
+    /** 来源类型：share / cloud / generic */
+    @ColumnInfo(defaultValue = "''")
+    val sourceType: String = "",
+    /** 来源补充信息：仅保存重新取链所需的非敏感文件元数据 */
+    @ColumnInfo(defaultValue = "''")
+    val sourceContext: String = "",
+    /** 临时下载 URL 预计过期时间（Unix 毫秒）；0 表示未知 */
+    @ColumnInfo(defaultValue = "0")
+    val urlExpiresAt: Long = 0L,
+    /** HTTP ETag */
+    @ColumnInfo(defaultValue = "''")
+    val etag: String = "",
+    /** HTTP Last-Modified */
+    @ColumnInfo(defaultValue = "''")
+    val lastModified: String = "",
+    /** 是否由用户主动暂停 */
+    @ColumnInfo(defaultValue = "0")
+    val manualPaused: Boolean = false,
+    /** 临时直链刷新次数 */
+    @ColumnInfo(defaultValue = "0")
+    val refreshCount: Int = 0,
     /** 下载完成时的平均速度（字节/秒）；完成态展示用，进行中为 0 */
     @ColumnInfo(defaultValue = "0")
     val avgSpeed: Long = 0,
+    /** 完成时间；旧版本记录迁移时为 0，界面以创建时间兜底 */
+    @ColumnInfo(defaultValue = "0")
+    val completedTime: Long = 0L,
     val createTime: Long = System.currentTimeMillis()
 ) {
     companion object {

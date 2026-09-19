@@ -73,6 +73,16 @@ class ChunkDownloader(private val clientProvider: () -> OkHttpClient) {
         activeCalls.remove(taskId)?.forEach { call -> runCatching { call.cancel() } }
     }
 
+    /** 任务 id → 最近一次疑似临时直链失效的 HTTP 状态；由 DownloadManager 消费。 */
+    private val sourceExpiryFailures = ConcurrentHashMap<Long, Int>()
+
+    fun consumeSourceExpiryFailure(taskId: Long): Int? =
+        sourceExpiryFailures.remove(taskId)
+
+    private fun markSourceExpiryFailure(taskId: Long, code: Int) {
+        sourceExpiryFailures[taskId] = code
+    }
+
     // ---------- 总大小探测 ----------
 
     suspend fun getTotalSize(url: String, headers: Map<String, String>): Long? = withContext(Dispatchers.IO) {
@@ -192,12 +202,19 @@ class ChunkDownloader(private val clientProvider: () -> OkHttpClient) {
         val cancelHandle = coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
         try {
             return call.execute().use { response ->
-                // 防盗链/广告回退页：直接判失败
-                if (response.header("Content-Type").orEmpty().contains("text/html", ignoreCase = true)) {
-                    Log.w(TAG, "downloadChunk: task=$taskId 返回 text/html（疑似广告/错误页），终止")
+                val statusCode = response.code
+                if (DownloadSourceRefreshPolicy.isExpiredHttpStatus(statusCode)) {
+                    markSourceExpiryFailure(taskId, statusCode)
+                    Log.w(TAG, "downloadChunk: task=$taskId 临时直链可能失效 HTTP $statusCode")
                     return@use ChunkResult.FAILED
                 }
-                when (val code = response.code) {
+                // 防盗链/过期回退页：记录后交由上层尝试重新取链
+                if (response.header("Content-Type").orEmpty().contains("text/html", ignoreCase = true)) {
+                    markSourceExpiryFailure(taskId, statusCode)
+                    Log.w(TAG, "downloadChunk: task=$taskId 返回 text/html（疑似过期/错误页），终止")
+                    return@use ChunkResult.FAILED
+                }
+                when (val code = statusCode) {
                     206 -> {
                         val requestedEnd = if (unknownTotal) null else end
                         if (!HttpRangePolicy.matches(response.header("Content-Range"), from, requestedEnd)) {
@@ -284,10 +301,20 @@ class ChunkDownloader(private val clientProvider: () -> OkHttpClient) {
             call.execute().use { response ->
                 // ★ 最终响应若是 HTML（防盗链/过期/错误页），直接失败，绝不存盘
                 if (response.header("Content-Type").orEmpty().contains("text/html", ignoreCase = true)) {
+                    val statusCode = response.code
+                    if (DownloadSourceRefreshPolicy.isExpiredHttpStatus(statusCode)) {
+                        markSourceExpiryFailure(taskId, statusCode)
+                    }
                     Log.w(TAG, "downloadFull: task=$taskId 返回 text/html（疑似过期/防盗链/错误页），终止")
                     throw IllegalStateException("下载失败：链接已失效或需要 Referer（返回 HTML 页）")
                 }
-                if (!response.isSuccessful) throw IllegalStateException("下载失败 HTTP ${response.code}")
+                if (!response.isSuccessful) {
+                    val statusCode = response.code
+                    if (DownloadSourceRefreshPolicy.isExpiredHttpStatus(statusCode)) {
+                        markSourceExpiryFailure(taskId, statusCode)
+                    }
+                    throw IllegalStateException("下载失败 HTTP $statusCode")
+                }
                 val body = response.body ?: return@use false
                 // 已知总大小时写时硬截断：服务器多给/Content-Range 偏差的字节直接丢弃，文件永不膨胀
                 val expected = if (total > 0) (total - existing).coerceAtLeast(0) else -1L

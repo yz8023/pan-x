@@ -325,6 +325,8 @@ class QuarkCloudViewModel(
                             fileName = relPath, // 相对路径：Download/文件夹A/子目录/文件.mp4
                             size = link.size,
                             platform = DownloadPlatform.QUARK,
+                            sourceFileId = file.fid,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++
@@ -377,7 +379,9 @@ class QuarkCloudViewModel(
                         "Cookie" to cookie,
                         "User-Agent" to com.yunx.app.data.network.QuarkConstants.API_USER_AGENT,
                         "Referer" to com.yunx.app.data.network.QuarkConstants.DOWNLOAD_REFERER
-                    )
+                    ),
+                    sourceFileId = file.fid,
+                    sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD
                 )
                 downloadLink = link // 弹下载确认弹窗（长按直链可复制）
             } catch (e: Exception) {
@@ -401,6 +405,8 @@ class QuarkCloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.QUARK,
+                    sourceFileId = pd.sourceFileId,
+                    sourceType = pd.sourceType,
                     headers = pd.headers
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
@@ -572,6 +578,8 @@ class QuarkCloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else link.filename.ifBlank { relPath },
                             size = link.size,
                             platform = DownloadPlatform.QUARK,
+                            sourceFileId = file.fid,
+                            sourceType = com.yunx.app.data.download.DownloadSourceType.CLOUD,
                             headers = downloadHeaders(cookie)
                         )
                         okCount++

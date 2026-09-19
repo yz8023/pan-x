@@ -62,6 +62,7 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VolunteerActivism
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -186,8 +187,9 @@ fun SettingsScreen(
     var showConcurrencyDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showRetryDialog by remember { mutableStateOf(false) }
-    // 用户体验与系统适配：锁屏保持下载 / 通知栏速度
+    // 用户体验与系统适配：锁屏保持下载 / 仅 Wi-Fi 下载 / 通知栏速度
     var keepLocked by remember { mutableStateOf(settingsRepo.keepDownloadWhenLocked) }
+    var wifiOnly by remember { mutableStateOf(settingsRepo.wifiOnlyDownload) }
     var showSpeed by remember { mutableStateOf(settingsRepo.notificationShowSpeed) }
     var showBatteryDialog by remember { mutableStateOf(false) }
     // 通知是否可用（areNotificationsEnabled 不是 Compose 状态源，手动提升为状态，
@@ -357,6 +359,23 @@ fun SettingsScreen(
                 }
             },
             trailing = { Switch(checked = keepLocked, onCheckedChange = null) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SettingsItem(
+            icon = Icons.Outlined.Wifi,
+            title = "仅 Wi-Fi 下载",
+            description = if (wifiOnly) {
+                "移动网络下任务进入等待，切回 Wi-Fi 自动续传"
+            } else {
+                "移动网络下也允许下载"
+            },
+            onClick = {
+                wifiOnly = !wifiOnly
+                settingsRepo.wifiOnlyDownload = wifiOnly
+            },
+            trailing = { Switch(checked = wifiOnly, onCheckedChange = null) }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
