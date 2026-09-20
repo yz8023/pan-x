@@ -41,6 +41,14 @@ class DownloadService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        // Android 12+ 要求 startForegroundService 后必须在超时窗口内调用 startForeground，
+        // 否则抛 ForegroundServiceDidNotStartInTimeException。任务可能极快完成/失败，
+        // stopService 会先于 onStartCommand 触发，因此必须在 onCreate 尽早提升为前台。
+        startAsForeground("下载中…", -1, "", true)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
