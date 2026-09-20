@@ -48,7 +48,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - Release 流程：git add + commit → push main → git tag vX.Y.Z → push tag → `export GH_TOKEN=$(echo -e "protocol=https\nhost=github.com\n" | git credential fill | awk -F= '$1=="password"{print $2}')` → `gh release create vX.Y.Z <apk> --repo yz8023/pan-x`
   - 发布 APK 用 debug 包（唯一签名配置），命名 `YunX-v<版本>-debug.apk`
   - 更新检测 UpdateChecker.kt 的 RELEASES_LATEST_URL 必须指向本仓库（yz8023/pan-x）而非上游
-  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.0/15
+  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.1/16
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
