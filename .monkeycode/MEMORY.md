@@ -80,3 +80,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - 阿里云盘 /sign/in 登录页 localStorage 键名仍为 `token`（rememberLogin 开启时写入，默认开）
   - 百度网盘移动端分享短链格式 `pan.baidu.com/wap/init?surl=XXX&pwd=XXX`：surl 参数即接口所需 share_id，不能像 /s/1xxx 那样去掉前导 1（/s/1xxx 去掉 1，wap/init 不去）
   - 解析页「登录已失效/请先登录」错误通过 ResolveUiState.Error.loginPlatform 携带平台，ResolveScreen 展示「重新登录」按钮，MainScreen 的 onReLogin 路由到对应登录页
+
+[Project Knowledge Summary]
+- Date: 2026-09-20
+- Context: Discovered by Agent while fixing ForegroundServiceDidNotStartInTimeException crash
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Android 12+ 前台服务竞态：startForegroundService 后若任务极快完成/失败，stopService 会先于 onStartCommand 的 startForeground 执行，系统在超时窗口（Android 12+ 5s，Android 16 6s）内未收到 startForeground 即抛 ForegroundServiceDidNotStartInTimeException
+  - 修复模式：在 Service.onCreate() 中立即调用 startForeground（占位通知），保证任何命令/停止处理前服务已处于前台；onStartCommand 再更新通知内容
+  - 若异常发生在有 <service android:foregroundServiceType="dataSync"> + FOREGROUND_SERVICE_DATA_SYNC 权限的情况下，多为启动时序竞态而非配置缺失
