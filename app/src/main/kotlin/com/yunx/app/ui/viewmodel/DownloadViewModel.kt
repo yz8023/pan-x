@@ -52,7 +52,10 @@ class DownloadViewModel(private val manager: DownloadManager) : ViewModel() {
         headers: Map<String, String> = emptyMap(),
         platform: String = ""
     ) {
-        viewModelScope.launch { manager.enqueue(url, fileName, headers, platform = platform) }
+        viewModelScope.launch {
+            runCatching { manager.enqueue(url, fileName, headers, platform = platform) }
+                .onFailure { SnackbarController.show(it.message ?: "加入下载失败") }
+        }
     }
 
     fun pause(id: Long) = manager.pause(id)
@@ -64,7 +67,10 @@ class DownloadViewModel(private val manager: DownloadManager) : ViewModel() {
     /** 重新下载：校验直链有效性后新建任务（直链过期时提示） */
     fun redownload(task: DownloadTaskEntity) {
         viewModelScope.launch {
-            val ok = manager.redownload(task.id)
+            val ok = runCatching { manager.redownload(task.id) }.getOrElse {
+                SnackbarController.show(it.message ?: "重新下载失败")
+                return@launch
+            }
             SnackbarController.show(if (ok) "已重新加入下载" else "直链已过期，请重新获取下载链接")
         }
     }

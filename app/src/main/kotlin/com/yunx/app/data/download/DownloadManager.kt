@@ -322,6 +322,12 @@ class DownloadManager(
             url.substringAfterLast('/').substringBefore('?')
                 .ifBlank { "download_${System.currentTimeMillis()}" }
         }
+        // ★ v1.4.5 修复：Android 9/10 需存储权限时，入队即弹窗申请（用户点击下载必在前台），
+        //   避免等下载完成（可能在后台）才申请导致弹窗失败 → 报「没有保存文件所需的存储权限」。
+        if (!storagePermissionProvider()) {
+            Log.w(TAG, "enqueue: 未授予存储权限，拒绝入队 fileName=$safeName")
+            throw IllegalStateException("未授予存储权限，无法保存到下载目录")
+        }
         Log.d(TAG, "enqueue: origin=${LogRedactor.url(url)} fileName=$safeName headers=${headers.keys} size=$size")
         val id = dao.insert(
             DownloadTaskEntity(

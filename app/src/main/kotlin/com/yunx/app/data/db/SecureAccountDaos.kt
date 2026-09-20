@@ -18,6 +18,7 @@
 
 package com.yunx.app.data.db
 
+import android.util.Log
 import com.yunx.app.data.security.CredentialCipher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -238,7 +239,12 @@ internal object SecureAccountDaos {
         try {
             block()
         } catch (error: Exception) {
-            clear()
+            // ★ v1.4.5 修复：解密失败不再清除账号行。旧实现里一旦 Android Keystore 密钥
+            //   暂时不可用（如升级后首启瞬间）就 `clear()` 永久删除账号 → 用户必须重新登录；
+            //   保留密文行 + 返回 null，后续密钥恢复时该账号可自动恢复，不影响「重新登录」覆盖写入。
+            Log.w(TAG, "凭证解密失败，保留密文不清除账号: ${error.message}")
             null
         }
+
+    private const val TAG = "SecureAccountDaos"
 }

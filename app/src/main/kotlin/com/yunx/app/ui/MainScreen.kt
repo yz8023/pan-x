@@ -161,6 +161,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.yunx.app.data.network.HttpClients
 
@@ -289,9 +291,12 @@ fun MainScreen() {
             showSpeedProvider = { settings.notificationShowSpeed }
         )
     }
-    // Android 9- 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权：
-    // 下载完成保存前由 DownloadManager.storagePermissionProvider 触发动态申请，授权后自动继续保存
+    // Android 9/10 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权：
+    // 由 DownloadManager.storagePermissionProvider 触发动态申请，授权后继续保存。
+    // ★ v1.4.5 修复：Android 10（Q）MediaStore 保存失败会回退传统路径，同样需要 WRITE 权限，
+    //   故只在 Android 11+（R）免权限；请求用 Mutex 串行化，避免多任务并发覆盖单槽位挂死。
     var pendingStoragePermission by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
+    val storagePermissionMutex = remember { Mutex() }
     val storagePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -299,17 +304,23 @@ fun MainScreen() {
         pendingStoragePermission = null
     }
     downloadManager.storagePermissionProvider = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            true // Android 10+ MediaStore 无需存储权限
-        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+        // Android 11+（R）分区存储强制，MediaStore/SAF 无需存储权限；
+        // Android 9/10（含 requestLegacyExternalStorage）仍需 WRITE 权限。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             true
         } else {
-            val deferred = CompletableDeferred<Boolean>()
-            pendingStoragePermission = deferred
-            withContext(Dispatchers.Main) {
-                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            storagePermissionMutex.withLock {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+                    true
+                } else {
+                    val deferred = CompletableDeferred<Boolean>()
+                    pendingStoragePermission = deferred
+                    withContext(Dispatchers.Main) {
+                        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    }
+                    deferred.await()
+                }
             }
-            deferred.await()
         }
     }
     // 临时直链刷新：仅对个人网盘 cloud 来源生效；分享链接来源需要额外会话上下文，暂不自动刷新。
@@ -936,7 +947,12 @@ fun MainScreen() {
                         backupManager = backupManager,
                         onDownloadUpdateApk = { url, name ->
                             scope.launch {
-                                downloadManager.enqueue(url = url, fileName = name)
+                                runCatching {
+                                    downloadManager.enqueue(url = url, fileName = name)
+                                }.onFailure {
+                                    SnackbarController.show(it.message ?: "加入下载失败")
+                                    return@launch
+                                }
                                 currentTab = MainTab.Download
                             }
                         }
@@ -1119,7 +1135,12 @@ fun MainScreen() {
                     val apk = release.assets.firstOrNull { it.name.endsWith(".apk", true) }
                     if (apk != null) {
                         scope.launch {
-                            downloadManager.enqueue(url = apk.downloadUrl, fileName = apk.name)
+                            runCatching {
+                                downloadManager.enqueue(url = apk.downloadUrl, fileName = apk.name)
+                            }.onFailure {
+                                SnackbarController.show(it.message ?: "加入下载失败")
+                                return@launch
+                            }
                             currentTab = MainTab.Download
                         }
                         SnackbarController.show("已加入下载，完成后点击「打开」即可安装")
@@ -1133,7 +1154,12 @@ fun MainScreen() {
                     val apk = release.assets.firstOrNull { it.name.endsWith(".apk", true) }
                     if (apk != null) {
                         scope.launch {
-                            downloadManager.enqueue(url = UpdateChecker.mirrorUrl(apk.downloadUrl), fileName = apk.name)
+                            runCatching {
+                                downloadManager.enqueue(url = UpdateChecker.mirrorUrl(apk.downloadUrl), fileName = apk.name)
+                            }.onFailure {
+                                SnackbarController.show(it.message ?: "加入下载失败")
+                                return@launch
+                            }
                             currentTab = MainTab.Download
                         }
                         SnackbarController.show("已通过镜像站加入下载，完成后点击「打开」即可安装")

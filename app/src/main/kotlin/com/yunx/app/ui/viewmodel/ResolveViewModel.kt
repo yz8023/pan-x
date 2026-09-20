@@ -831,21 +831,25 @@ class ResolveViewModel(
         } else {
             link.downloadUrl
         }
-        downloadManager.enqueue(
-            url = effectiveUrl,
-            fileName = fileName,
-            headers = headers,
-            size = link.size,
-            platform = platform
-        ) {
-            // 下载完成（master 版通过 onComplete 回调）：清理网盘临时转存目录；失败/取消不触发
-            val dirFid = link.cleanupDirFid
-            if (dirFid != null) {
-                val credential = currentCredential()
-                if (!credential.isNullOrBlank()) {
-                    resolveRepository.cleanupTempDir(dirFid, credential)
+        runCatching {
+            downloadManager.enqueue(
+                url = effectiveUrl,
+                fileName = fileName,
+                headers = headers,
+                size = link.size,
+                platform = platform
+            ) {
+                // 下载完成（master 版通过 onComplete 回调）：清理网盘临时转存目录；失败/取消不触发
+                val dirFid = link.cleanupDirFid
+                if (dirFid != null) {
+                    val credential = currentCredential()
+                    if (!credential.isNullOrBlank()) {
+                        resolveRepository.cleanupTempDir(dirFid, credential)
+                    }
                 }
             }
+        }.onFailure { e ->
+            downloadError = e.message ?: "加入下载失败"
         }
     }
 
