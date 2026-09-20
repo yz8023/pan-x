@@ -48,7 +48,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - Release 流程：git add + commit → push main → git tag vX.Y.Z → push tag → `export GH_TOKEN=$(echo -e "protocol=https\nhost=github.com\n" | git credential fill | awk -F= '$1=="password"{print $2}')` → `gh release create vX.Y.Z <apk> --repo yz8023/pan-x`
   - 发布 APK 用 debug 包（唯一签名配置），命名 `YunX-v<版本>-debug.apk`
   - 更新检测 UpdateChecker.kt 的 RELEASES_LATEST_URL 必须指向本仓库（yz8023/pan-x）而非上游
-  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.2/17
+  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.3/18
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
@@ -89,3 +89,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - Android 12+ 前台服务竞态：startForegroundService 后若任务极快完成/失败，stopService 会先于 onStartCommand 的 startForeground 执行，系统在超时窗口（Android 12+ 5s，Android 16 6s）内未收到 startForeground 即抛 ForegroundServiceDidNotStartInTimeException
   - 修复模式：在 Service.onCreate() 中立即调用 startForeground（占位通知），保证任何命令/停止处理前服务已处于前台；onStartCommand 再更新通知内容
   - 若异常发生在有 <service android:foregroundServiceType="dataSync"> + FOREGROUND_SERVICE_DATA_SYNC 权限的情况下，多为启动时序竞态而非配置缺失
+
+[Project Knowledge Summary]
+- Date: 2026-09-20
+- Context: Discovered by Agent while fixing 百度转存获取 bdstoken 失败
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - gettemplatevariable 是 BaiduApi 中唯一必须补 Referer 的请求：百度 WAF 对无 Referer 的 API 请求即使携带有效 BDUSS 也返回 errno=-6（会话无效）；需带 `Referer: https://pan.baidu.com/disk/main` + `channel=chunlei` 参数
+  - 百度错误码：errno=0 成功；errno=-6 会话无效/未登录；errno=2 鉴权/参数缺失（BDCLND 缺失时 transfer 报此码）
+  - BaiduApi 是 MainScreen `remember { BaiduApi() }` 单例，跨账号复用：bdstoken/缓存必须按 Cookie 中 BDUSS 维度隔离，否则切换账号串 token
+  - 登录校验不能只看 Cookie 是否含 BDUSS，要以 gettemplatevariable 取昵称成功为准，否则「登录成功但转存时取不到 bdstoken」
