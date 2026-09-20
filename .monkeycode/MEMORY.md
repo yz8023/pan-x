@@ -48,7 +48,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - Release 流程：git add + commit → push main → git tag vX.Y.Z → push tag → `export GH_TOKEN=$(echo -e "protocol=https\nhost=github.com\n" | git credential fill | awk -F= '$1=="password"{print $2}')` → `gh release create vX.Y.Z <apk> --repo yz8023/pan-x`
   - 发布 APK 用 debug 包（唯一签名配置），命名 `YunX-v<版本>-debug.apk`
   - 更新检测 UpdateChecker.kt 的 RELEASES_LATEST_URL 必须指向本仓库（yz8023/pan-x）而非上游
-  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.3/18
+  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.4/19
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
@@ -89,6 +89,8 @@ Entries discovered by the Agent during task execution should follow this format:
   - Android 12+ 前台服务竞态：startForegroundService 后若任务极快完成/失败，stopService 会先于 onStartCommand 的 startForeground 执行，系统在超时窗口（Android 12+ 5s，Android 16 6s）内未收到 startForeground 即抛 ForegroundServiceDidNotStartInTimeException
   - 修复模式：在 Service.onCreate() 中立即调用 startForeground（占位通知），保证任何命令/停止处理前服务已处于前台；onStartCommand 再更新通知内容
   - 若异常发生在有 <service android:foregroundServiceType="dataSync"> + FOREGROUND_SERVICE_DATA_SYNC 权限的情况下，多为启动时序竞态而非配置缺失
+  - ★ 仅有 onCreate 占位 startForeground 仍不足：DownloadService 生命周期由 Dispatchers.Default 后台线程的 onTaskStarted/onTaskFinished 驱动，任务极快结束时间歇性复现。根治：companion stop() 严禁直接 stopService，改发 ACTION_STOP 意图走 startForegroundService，由服务内 onStartCommand 在 startForeground 之后 stopSelf() 安全停止；同时通知构建包 try/catch 回退最简通知，保证 startForeground 永不因构建异常被跳过
+  - DownloadService 用 @Volatile stopPending 防重入：多个任务并发结束时只发一次 ACTION_STOP，避免服务反复重建
 
 [Project Knowledge Summary]
 - Date: 2026-09-20

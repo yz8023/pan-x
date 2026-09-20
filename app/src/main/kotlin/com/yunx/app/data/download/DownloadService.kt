@@ -75,12 +75,34 @@ class DownloadService : Service() {
 
     private fun startAsForeground(title: String, progress: Int, speed: String, showSpeed: Boolean) {
         ensureChannel()
-        val notification = buildNotification(title, progress, speed, showSpeed)
+        // 通知构建异常不能阻断 startForeground，否则在 Android 12+ 会因超时未调用
+        // startForeground 而触发 ForegroundServiceDidNotStartInTimeException 崩溃。
+        val notification = try {
+            buildNotification(title, progress, speed, showSpeed)
+        } catch (t: Throwable) {
+            minimalNotification(title)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+    }
+
+    /** 最简前台通知：startForeground 兜底用，保证任何异常下都能完成前台提升 */
+    private fun minimalNotification(title: String): Notification {
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        return builder
+            .setSmallIcon(R.drawable.icon)
+            .setContentTitle(title)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
     }
 
     private fun ensureChannel() {
@@ -131,6 +153,13 @@ class DownloadService : Service() {
         private const val EXTRA_SPEED = "speed"
         private const val EXTRA_SHOW_SPEED = "show_speed"
 
+        /**
+         * 防重入标记：stop() 可能被并发调用（多个任务同时结束时），
+         * 只发送一次停止意图，避免服务被反复重建。
+         */
+        @Volatile
+        private var stopPending = false
+
         /** 下载任务开始时调用（服务不存在则创建前台服务） */
         fun start(context: Context, title: String, progress: Int = 0) {
             start(context, title, progress, "", true)
@@ -142,6 +171,7 @@ class DownloadService : Service() {
         }
 
         private fun start(context: Context, title: String, progress: Int, speed: String, showSpeed: Boolean) {
+            stopPending = false
             val intent = Intent(context, DownloadService::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_PROGRESS, progress)
@@ -154,9 +184,23 @@ class DownloadService : Service() {
             }
         }
 
-        /** 全部任务结束：停止前台服务（stopService 无后台启动限制，安全） */
+        /**
+         * 全部任务结束：停止前台服务。
+         * ★ 严禁用 stopService()：任务跑在 Dispatchers.Default，stopService 可能先于主线程
+         *   onCreate() 的 startForeground() 被系统处理，fgRequired 服务未前台即销毁，
+         *   系统直接抛 ForegroundServiceDidNotStartInTimeException 崩溃。
+         *   改为发送 ACTION_STOP 意图，由服务内 onStartCommand 在 startForeground 之后
+         *   调用 stopSelf() 安全停止。
+         */
         fun stop(context: Context) {
-            context.stopService(Intent(context, DownloadService::class.java))
+            if (stopPending) return
+            stopPending = true
+            val intent = Intent(context, DownloadService::class.java).setAction(ACTION_STOP)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
 
         /** 下载完成通知：独立于前台进度通知，用户可滑动关闭 */
