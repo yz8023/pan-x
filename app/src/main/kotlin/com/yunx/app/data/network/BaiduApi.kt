@@ -60,9 +60,15 @@ class BaiduApi(
 
     private val formMediaType = "application/x-www-form-urlencoded".toMediaType()
 
-    /** bdstoken 缓存（登录态内长期有效） */
+    /** bdstoken 缓存（按 BDUSS 账号隔离：切换账号不串 token） */
+    @Volatile
+    private var cachedBdstokenKey: String? = null
     @Volatile
     private var cachedBdstoken: String? = null
+
+    /** 提取 Cookie 中 BDUSS 作为账号标识；缺失时返回 null */
+    private fun bdussOf(cookie: String): String? =
+        Regex("(?:^|;\\s*)BDUSS=([^;]+)").find(cookie)?.groupValues?.get(1)
 
     // ---------- 账号 ----------
 
@@ -72,24 +78,31 @@ class BaiduApi(
         result.optString("username").takeIf { it.isNotBlank() }
     }
 
-    /** 获取 bdstoken（gettemplatevariable，带缓存） */
+    /** 获取 bdstoken（gettemplatevariable，带缓存；BDUSS 变化时自动失效重取） */
     suspend fun getBdstoken(cookie: String): String? = withContext(Dispatchers.IO) {
-        cachedBdstoken?.takeIf { it.isNotBlank() }?.let { return@withContext it }
+        val key = bdussOf(cookie) ?: return@withContext null
+        if (key == cachedBdstokenKey && cachedBdstoken?.isNotBlank() == true) {
+            return@withContext cachedBdstoken
+        }
         val result = templateVariable(cookie, """["bdstoken"]""") ?: return@withContext null
         val token = result.optString("bdstoken").takeIf { it.isNotBlank() } ?: return@withContext null
+        cachedBdstokenKey = key
         cachedBdstoken = token
         token
     }
 
     private suspend fun templateVariable(cookie: String, fields: String): JSONObject? =
         withContext(Dispatchers.IO) {
+            // Referer 必须携带 pan.baidu.com 页面地址：gettemplatevariable 校验登录态的
+            // 依据包含 Referer，缺失时即使 BDUSS 有效也会返回 errno=-6（WAF 判定非浏览器会话）
             val url = "https://pan.baidu.com/api/gettemplatevariable" +
-                "?clienttype=0&app_id=${BaiduConstants.APP_ID}&web=1&fields=" +
+                "?clienttype=0&app_id=${BaiduConstants.APP_ID}&web=1&channel=chunlei&fields=" +
                 URLEncoder.encode(fields, "UTF-8")
             val request = Request.Builder()
                 .url(url)
                 .header("Cookie", cookie)
                 .header("User-Agent", BaiduConstants.UA_WEB)
+                .header("Referer", "https://pan.baidu.com/disk/main")
                 .get()
                 .build()
             runCatching {

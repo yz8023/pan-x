@@ -51,11 +51,13 @@ class BaiduAccountRepository(
     }
 
     /**
-     * 校验 Cookie 有效性（需含 BDUSS）；有效则拉取昵称并落库，返回 true；无效返回 false。
+     * 校验 Cookie 有效性：需含 BDUSS 且能通过 gettemplatevariable 校验登录态
+     * （昵称/bdstoken 获取成功才视为有效，避免「看起来登录成功、转存时 bdstoken 取不到」）。
+     * 有效则拉取昵称并落库，返回 true；无效返回 false。
      */
     suspend fun saveBaiduAccount(cookie: String): Boolean {
         if (!BaiduConstants.isValidCookie(cookie)) return false
-        val nickname = api.fetchNickname(cookie) ?: "百度用户"
+        val nickname = api.fetchNickname(cookie) ?: return false
         dao.upsert(
             BaiduAccountEntity(
                 id = "baidu",
