@@ -116,6 +116,8 @@ fun ResolveScreen(
     ucCloudViewModel: UCCoudViewModel,
     /** 123 云盘浏览 ViewModel（123 分享转存目录选择用） */
     pan123CloudViewModel: Pan123CloudViewModel,
+    /** 登录过期/未登录解析失败时，跳转对应平台登录页（由 MainScreen 注入） */
+    onReLogin: (SharePlatform) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state = viewModel.uiState
@@ -283,7 +285,8 @@ fun ResolveScreen(
                     onClearHistory = {
                         historyRepository.clear()
                         recentHistory = emptyList()
-                    }
+                    },
+                    onReLogin = onReLogin
                 )
             }
         }
@@ -375,7 +378,8 @@ private fun ResolveInputContent(
     onStartResolve: (String, String?) -> Unit,
     onHistorySelect: (ResolveHistoryItem) -> Unit,
     onRemoveHistory: (ResolveHistoryItem) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    onReLogin: (SharePlatform) -> Unit
 ) {
     val isLoading = state is ResolveUiState.Loading
 
@@ -454,21 +458,37 @@ private fun ResolveInputContent(
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 )
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = state.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    // 登录过期 / 未登录导致的解析失败：提供「一键重新登录」入口（跳到对应平台登录页）
+                    state.loginPlatform?.let { platform ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { onReLogin(platform) }) {
+                                Text("重新登录${platform.displayName()}")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -661,4 +681,18 @@ private fun ClipboardSuggestCard(
             }
         }
     }
+}
+
+/** 平台中文名（错误卡片「重新登录」按钮文案用） */
+private fun SharePlatform.displayName(): String = when (this) {
+    SharePlatform.QUARK -> "夸克网盘"
+    SharePlatform.UC -> "UC 网盘"
+    SharePlatform.XUNLEI -> "迅雷网盘"
+    SharePlatform.BAIDU -> "百度网盘"
+    SharePlatform.C139 -> "139 网盘"
+    SharePlatform.PAN123 -> "123云盘"
+    SharePlatform.ALIPAN -> "阿里云盘"
+    SharePlatform.P115 -> "115 网盘"
+    SharePlatform.LANZOU -> "蓝奏云"
+    SharePlatform.PIKPAK -> "PikPak"
 }

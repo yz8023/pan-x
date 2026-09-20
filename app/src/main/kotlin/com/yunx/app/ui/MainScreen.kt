@@ -96,6 +96,7 @@ import com.yunx.app.data.network.PikPakApi
 import com.yunx.app.data.network.AlipanApi
 import com.yunx.app.data.network.QuarkApi
 import com.yunx.app.data.network.UCApi
+import com.yunx.app.data.network.SharePlatform
 import com.yunx.app.data.network.XunleiApi
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.data.update.UpdateChecker
@@ -876,7 +877,20 @@ fun MainScreen() {
                         baiduCloudViewModel,
                         c139CloudViewModel,
                         ucCloudViewModel,
-                        pan123CloudViewModel
+                        pan123CloudViewModel,
+                        onReLogin = { platform ->
+                            when (platform) {
+                                SharePlatform.QUARK -> showQuarkLogin = true
+                                SharePlatform.UC -> showUCLogin = true
+                                SharePlatform.XUNLEI -> showXunleiLogin = true
+                                SharePlatform.BAIDU -> showBaiduLogin = true
+                                SharePlatform.C139 -> showC139Login = true
+                                SharePlatform.PAN123 -> showPan123Login = true
+                                SharePlatform.ALIPAN -> showAlipanLogin = true
+                                SharePlatform.P115 -> showP115Login = true
+                                else -> Unit // 蓝奏云/PikPak 匿名，无需登录
+                            }
+                        }
                     )
                     MainTab.Drive -> DriveScreen(
                         scrollBehavior = scrollBehavior,

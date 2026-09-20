@@ -41,6 +41,8 @@ object ShareLinkParser {
     private val ucShareIdRegex = Regex("""drive\.uc\.cn/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
     private val xunleiShareIdRegex = Regex("""pan\.xunlei\.com/s/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
     private val baiduShareIdRegex = Regex("""pan\.baidu\.com/s/(1[A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+    // 百度网盘移动端/分享页短链：https://pan.baidu.com/wap/init?surl=XXXX&pwd=XXXX（surl 即接口所需的 share_id）
+    private val baiduWapSurlRegex = Regex("""pan\.baidu\.com/wap/init\?[^"'\s]*surl=([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
     private val c139ShareIdRegex = Regex("""yun\.139\.com/shareweb/.*?/w/i/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
     // 123 云盘分享链接（抓包 + alist 实践综合，文档 §4.1）：
     // - https://www.123pan.com/s/<ShareKey> / https://www.123865.com/s/<ShareKey>
@@ -87,6 +89,13 @@ object ShareLinkParser {
         baiduShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { sid ->
             // 百度 surl 不包含开头的 "1"（verify/list 接口用 1 后面的部分）
             val surl = sid.removePrefix("1")
+            val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
+                ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
+            return ParsedShare(shareId = surl, pwd = pwd, platform = SharePlatform.BAIDU)
+        }
+        // 百度移动端分享：https://pan.baidu.com/wap/init?surl=XXXX&pwd=XXXX
+        // surl 参数即接口所需的 share_id（与 /s/1xxx 形态不同，不要再去掉前导 1）
+        baiduWapSurlRegex.find(url)?.groupValues?.getOrNull(1)?.let { surl ->
             val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
                 ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
             return ParsedShare(shareId = surl, pwd = pwd, platform = SharePlatform.BAIDU)

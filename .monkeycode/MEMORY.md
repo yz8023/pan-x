@@ -69,3 +69,14 @@ Entries discovered by the Agent during task execution should follow this format:
   - 新增平台需接线点：DownloadPlatform 常量、SettingsScreen.threadPlatforms、AuthBackupManager 备份/导入、MainScreen DI（VM Factory + resolve repo + AccountSheet）、DriveScreen 卡片
   - Room 新增表必须写 Migration（版本+1），不能依赖 fallbackToDestructiveMigration（会丢凭证）
   - 各平台 AccountSheet 的 InfoRow 是文件私有函数，新写 Sheet 需自带
+
+[Project Knowledge Summary]
+- Date: 2026-09-20
+- Context: Discovered by Agent while fixing alipan 登录 + 百度 wap/init 链接无法解析
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 阿里云盘登录页必须用 `https://www.alipan.com/sign/in`；官网首页 `https://www.alipan.com/` 是营销落地页，无登录表单
+  - 阿里云盘官方密码登录接口 `POST /v2/account/token/login_by_password` 已下线（auth.alipan.com 与 auth.aliyundrive.com 均 404），第三方无法做原生账密登录；只能走官方登录页（/sign/in）提取 localStorage `token` JSON 的 refresh_token
+  - 阿里云盘 /sign/in 登录页 localStorage 键名仍为 `token`（rememberLogin 开启时写入，默认开）
+  - 百度网盘移动端分享短链格式 `pan.baidu.com/wap/init?surl=XXX&pwd=XXX`：surl 参数即接口所需 share_id，不能像 /s/1xxx 那样去掉前导 1（/s/1xxx 去掉 1，wap/init 不去）
+  - 解析页「登录已失效/请先登录」错误通过 ResolveUiState.Error.loginPlatform 携带平台，ResolveScreen 展示「重新登录」按钮，MainScreen 的 onReLogin 路由到对应登录页

@@ -28,8 +28,12 @@ object AlipanConstants {
     /** OAuth token 刷新（refresh_token → access_token） */
     const val AUTH_BASE = "https://auth.alipan.com"
 
-    /** 网页登录页：阿里云盘官网（PC UA 登录，登录后 localStorage `token` 写入 JSON 登录态） */
-    const val WEB_LOGIN_URL = "https://www.alipan.com/"
+    /**
+     * 网页登录页：阿里云盘官方登录页（账号密码 / 扫码 / 短信）。
+     * ⚠️ 首页 https://www.alipan.com/ 是营销落地页，无登录表单；必须用 /sign/in 才展示登录选项。
+     * 登录后 SPA 会向当前域 localStorage 写入键 `token` 的 JSON 登录态（含 refresh_token）。
+     */
+    const val WEB_LOGIN_URL = "https://www.alipan.com/sign/in"
 
     /** 网页登录态在 localStorage 中的键名：值为 JSON（含 refresh_token / access_token） */
     const val LOCAL_STORAGE_TOKEN_KEY = "token"

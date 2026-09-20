@@ -72,7 +72,12 @@ sealed interface ResolveUiState {
     data object Idle : ResolveUiState
     data object Loading : ResolveUiState
     data class Detail(val session: ShareSession, val files: List<ShareFile>) : ResolveUiState
-    data class Error(val message: String) : ResolveUiState
+
+    /**
+     * @param message 错误提示
+     * @param loginPlatform 需要登录的平台：非空时错误卡片展示「一键重新登录」入口
+     */
+    data class Error(val message: String, val loginPlatform: SharePlatform? = null) : ResolveUiState
 }
 
 /**
@@ -580,7 +585,7 @@ class ResolveViewModel(
                 // 蓝奏云 / PikPak 匿名解析，无需登录；115 列表匿名可用但下载需登录（先解析列表，下载时再校验）
                 val anonymous = isAnonymousPlatform
             if (credential.isNullOrBlank() && !anonymous) {
-                uiState = ResolveUiState.Error("请先在「网盘」页登录${platformName()}")
+                uiState = ResolveUiState.Error("请先在「网盘」页登录${platformName()}", loginPlatform = currentPlatform)
                 return@launch
             }
             val repo = currentRepo()
@@ -608,7 +613,7 @@ class ResolveViewModel(
             uiState = ResolveUiState.Loading
             val credential = currentCredential()
             if (credential.isNullOrBlank() && !isAnonymousPlatform) {
-                uiState = ResolveUiState.Error("登录已失效，请重新登录")
+                uiState = ResolveUiState.Error("登录已失效，请重新登录", loginPlatform = currentPlatform)
                 return@launch
             }
             loadFiles(s, file.fid, credential.orEmpty(), currentRepo())

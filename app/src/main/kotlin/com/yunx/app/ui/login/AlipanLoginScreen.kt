@@ -76,7 +76,7 @@ import org.json.JSONObject
 
 /**
  * 阿里云盘登录页（网页登录方案，与 123 云盘/夸克等一致）：
- * - WebView 打开官网 [AlipanConstants.WEB_LOGIN_URL]，由用户手动登录（扫码/短信验证码由官网处理）；
+ * - WebView 打开官方登录页 [AlipanConstants.WEB_LOGIN_URL]，由用户手动登录（账号密码/扫码/短信验证码由官网处理）；
  * - 登录成功后网页 SPA 会把登录态写入当前域 localStorage，键名 token（JSON，含 refresh_token）；
  * - 右上角「保存」/自动登录检测均从 localStorage 提取该 JSON，解析出 refresh_token 校验后落库。
  */
@@ -237,7 +237,7 @@ fun AlipanLoginScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "1. 在下方网页中登录阿里云盘账号（支持扫码 / 短信验证码）",
+                        text = "1. 在下方登录页选择「账号密码」/ 扫码 / 短信验证码登录阿里云盘",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(

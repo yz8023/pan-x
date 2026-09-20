@@ -92,4 +92,33 @@ class ShareLinkParserTest {
     fun rejectsUnrelatedUrl() {
         assertNull(ShareLinkParser.parse("https://example.com/s/Abc123"))
     }
+
+    @Test
+    fun baiduWapInitSurlIsExtracted() {
+        val parsed = ShareLinkParser.parse(
+            "https://pan.baidu.com/wap/init?surl=br149denaXfZrzW7uPllpA&pwd=1pza"
+        )!!
+        assertEquals(SharePlatform.BAIDU, parsed.platform)
+        assertEquals("br149denaXfZrzW7uPllpA", parsed.shareId)
+        assertEquals("1pza", parsed.pwd)
+    }
+
+    @Test
+    fun baiduWapInitSurlKeepsLeadingOneWhenPresent() {
+        // surl 参数是接口所需的完整 share_id；即使以 1 开头也不要像 /s/1xxx 那样去掉前导 1
+        val parsed = ShareLinkParser.parse(
+            "https://pan.baidu.com/wap/init?surl=1aBcDeFgHiJkLmN&pwd=9xYz"
+        )!!
+        assertEquals(SharePlatform.BAIDU, parsed.platform)
+        assertEquals("1aBcDeFgHiJkLmN", parsed.shareId)
+        assertEquals("9xYz", parsed.pwd)
+    }
+
+    @Test
+    fun baiduWapInitWithoutPasswordStillParses() {
+        val parsed = ShareLinkParser.parse("https://pan.baidu.com/wap/init?surl=br149denaXfZrzW7uPllpA")!!
+        assertEquals(SharePlatform.BAIDU, parsed.platform)
+        assertEquals("br149denaXfZrzW7uPllpA", parsed.shareId)
+        assertNull(parsed.pwd)
+    }
 }
