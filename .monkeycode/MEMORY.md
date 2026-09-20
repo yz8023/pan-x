@@ -48,7 +48,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - Release 流程：git add + commit → push main → git tag vX.Y.Z → push tag → `export GH_TOKEN=$(echo -e "protocol=https\nhost=github.com\n" | git credential fill | awk -F= '$1=="password"{print $2}')` → `gh release create vX.Y.Z <apk> --repo yz8023/pan-x`
   - 发布 APK 用 debug 包（唯一签名配置），命名 `YunX-v<版本>-debug.apk`
   - 更新检测 UpdateChecker.kt 的 RELEASES_LATEST_URL 必须指向本仓库（yz8023/pan-x）而非上游
-  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.4/19
+  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.5/20
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
@@ -101,3 +101,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 百度错误码：errno=0 成功；errno=-6 会话无效/未登录；errno=2 鉴权/参数缺失（BDCLND 缺失时 transfer 报此码）
   - BaiduApi 是 MainScreen `remember { BaiduApi() }` 单例，跨账号复用：bdstoken/缓存必须按 Cookie 中 BDUSS 维度隔离，否则切换账号串 token
   - 登录校验不能只看 Cookie 是否含 BDUSS，要以 gettemplatevariable 取昵称成功为准，否则「登录成功但转存时取不到 bdstoken」
+
+[Project Knowledge Summary]
+- Date: 2026-09-20
+- Context: Discovered by Agent while fixing 下载保存缺存储权限报错 + 升级后百度重登（v1.4.5）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 存储权限弹窗只能在 Activity 前台时可靠展示：权限申请要放在「下载入队时」（用户点下载必在前台），不能放在「下载完成保存前」（前台服务后台场景弹窗会失败/挂死）
+  - Android 10（Q）MediaStore 保存失败会回退传统路径，仍需 WRITE 权限（仅 Android 11+ 免权限）；storagePermissionProvider 的免权限判定要用 `SDK_INT >= R` 而非 `>= Q`
+  - storagePermissionProvider 是单一 CompletableDeferred 槽位，多任务并发保存互相覆盖会挂死，需用 Mutex 串行化
+  - 百度「升级后每次都要重登」排查结论：无版本号驱动的清数据逻辑；debug.keystore 稳定 + Room 迁移非破坏性，就地覆盖安装不丢登录；唯一自清路径是 SecureAccountDaos.decryptOrClear 解密失败即 clear() 删行 → 修复为解密失败保留密文行返回 null（Keystore 暂不可用不永久丢账号）
