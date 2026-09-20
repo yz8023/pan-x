@@ -597,6 +597,9 @@ private fun platformLabel(platform: SharePlatform): String = when (platform) {
     SharePlatform.C139 -> "139 网盘"
     SharePlatform.PAN123 -> "123云盘"
     SharePlatform.ALIPAN -> "阿里云盘"
+    SharePlatform.P115 -> "115 网盘"
+    SharePlatform.LANZOU -> "蓝奏云"
+    SharePlatform.PIKPAK -> "PikPak"
 }
 
 /** 剪贴板分享链接提示卡片：检测到分享链接时，询问是否粘贴解析 */

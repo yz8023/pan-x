@@ -32,7 +32,10 @@ import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.BaiduConstants
 import com.yunx.app.data.network.AlipanConstants
 import com.yunx.app.data.network.C139Constants
+import com.yunx.app.data.network.LanzouConstants
+import com.yunx.app.data.network.P115Constants
 import com.yunx.app.data.network.Pan123Constants
+import com.yunx.app.data.network.PikPakConstants
 import com.yunx.app.data.network.QuarkConstants
 import com.yunx.app.data.network.QuarkCdn
 import com.yunx.app.data.network.ShareLinkParser
@@ -50,6 +53,10 @@ import com.yunx.app.data.repository.Pan123AccountRepository
 import com.yunx.app.data.repository.Pan123ResolveRepository
 import com.yunx.app.data.repository.AlipanAccountRepository
 import com.yunx.app.data.repository.AlipanResolveRepository
+import com.yunx.app.data.repository.LanzouResolveRepository
+import com.yunx.app.data.repository.P115AccountRepository
+import com.yunx.app.data.repository.P115ResolveRepository
+import com.yunx.app.data.repository.PikPakResolveRepository
 import com.yunx.app.data.repository.QuarkAccountRepository
 import com.yunx.app.data.repository.QuarkResolveRepository
 import com.yunx.app.data.repository.ShareResolveRepository
@@ -87,6 +94,10 @@ class ResolveViewModel(
     private val pan123ResolveRepository: Pan123ResolveRepository,
     private val alipanAccountRepository: AlipanAccountRepository,
     private val alipanResolveRepository: AlipanResolveRepository,
+    private val p115AccountRepository: P115AccountRepository,
+    private val p115ResolveRepository: P115ResolveRepository,
+    private val lanzouResolveRepository: LanzouResolveRepository,
+    private val pikpakResolveRepository: PikPakResolveRepository,
     private val downloadManager: DownloadManager,
     private val bookmarkDao: BookmarkDao
 ) : ViewModel() {
@@ -393,7 +404,9 @@ class ResolveViewModel(
             batchCancelRequested = false
             try {
                 val credential = currentCredential()
-                if (credential.isNullOrBlank()) {
+                // 蓝奏云 / PikPak 匿名解析：无需登录；115 下载需要登录（在取链时校验）
+                val anonymous = isAnonymousPlatform
+                if (credential.isNullOrBlank() && !anonymous) {
                     downloadError = "请先登录网盘"
                     return@launch
                 }
@@ -407,7 +420,7 @@ class ResolveViewModel(
                 val tasks = mutableListOf<Pair<ShareFile, String>>()
                 for (file in files) {
                     if (file.isdir) {
-                        collectShareFolder(s, file.fid, file.fname, quarkCred, tasks, 0)
+                        collectShareFolder(s, file.fid, file.fname, quarkCred.orEmpty(), tasks, 0)
                     } else {
                         tasks.add(file to "")
                     }
@@ -429,9 +442,9 @@ class ResolveViewModel(
                     val (file, relPath) = task
                     batchProgress = "${index + 1}/${tasks.size}"
                     runCatching {
-                        currentRepo().getShareDownloadLink(s, file, quarkCred).getOrNull()?.let { link ->
+                        currentRepo().getShareDownloadLink(s, file, quarkCred.orEmpty()).getOrNull()?.let { link ->
                             // 文件夹内文件用相对路径（保持目录结构）；根目录文件用取链返回的文件名
-                            enqueueDownload(link, quarkCred, if (relPath.isBlank()) link.filename else relPath)
+                            enqueueDownload(link, quarkCred.orEmpty(), if (relPath.isBlank()) link.filename else relPath)
                             okCount++
                         }
                     }
@@ -497,7 +510,11 @@ class ResolveViewModel(
     /** 当前解析平台（QUARK / UC / XUNLEI），由链接自动检测 */
     private var currentPlatform: SharePlatform = SharePlatform.QUARK
 
-    /** 当前分享凭证（夸克/UC/百度/139 用 cookie，迅雷/123 用 access_token，阿里云盘用惰性刷新的 access_token） */
+    /** 蓝奏云 / PikPak 匿名解析：无需登录即可列表与取直链 */
+    private val isAnonymousPlatform: Boolean
+        get() = currentPlatform == SharePlatform.LANZOU || currentPlatform == SharePlatform.PIKPAK
+
+    /** 当前分享凭证（夸克/UC/百度/139 用 cookie，迅雷/123 用 access_token，阿里云盘用惰性刷新的 access_token，115 用 Cookie） */
     private suspend fun currentCredential(): String? = when (currentPlatform) {
         SharePlatform.UC -> ucAccountRepository.getAccount()?.cookie
         SharePlatform.XUNLEI -> xunleiAccountRepository.getAccount()?.accessToken
@@ -505,6 +522,7 @@ class ResolveViewModel(
         SharePlatform.C139 -> c139AccountRepository.getAccount()?.cookie
         SharePlatform.PAN123 -> pan123AccountRepository.getAccount()?.accessToken
         SharePlatform.ALIPAN -> alipanAccountRepository.getFreshAccessToken()
+        SharePlatform.P115 -> p115AccountRepository.getAccount()?.cookie
         else -> accountRepository.getAccount()?.cookie
     }
 
@@ -515,6 +533,9 @@ class ResolveViewModel(
         SharePlatform.C139 -> c139ResolveRepository
         SharePlatform.PAN123 -> pan123ResolveRepository
         SharePlatform.ALIPAN -> alipanResolveRepository
+        SharePlatform.P115 -> p115ResolveRepository
+        SharePlatform.LANZOU -> lanzouResolveRepository
+        SharePlatform.PIKPAK -> pikpakResolveRepository
         else -> resolveRepository
     }
 
@@ -525,16 +546,21 @@ class ResolveViewModel(
         SharePlatform.C139 -> "0"
         SharePlatform.PAN123 -> "0"
         SharePlatform.ALIPAN -> AlipanConstants.ROOT_FILE_ID
+        SharePlatform.P115 -> P115Constants.ROOT_DIR_ID
+        SharePlatform.LANZOU -> LanzouConstants.ROOT_DIR_ID
+        SharePlatform.PIKPAK -> PikPakConstants.ROOT_DIR_ID
         else -> QuarkConstants.DEFAULT_PDIR_FID
     }
 
-    private fun platformName(): String = when (currentPlatform) {
-        SharePlatform.UC -> "UC 网盘"
+    private fun platformName(): String = when (currentPlatform) {        SharePlatform.UC -> "UC 网盘"
         SharePlatform.XUNLEI -> "迅雷网盘"
         SharePlatform.BAIDU -> "百度网盘"
         SharePlatform.C139 -> "139 网盘"
         SharePlatform.PAN123 -> "123云盘"
         SharePlatform.ALIPAN -> "阿里云盘"
+        SharePlatform.P115 -> "115 网盘"
+        SharePlatform.LANZOU -> "蓝奏云"
+        SharePlatform.PIKPAK -> "PikPak"
         else -> "夸克网盘"
     }
 
@@ -550,19 +576,21 @@ class ResolveViewModel(
                 return@launch
             }
             currentPlatform = parsed.platform
-            val credential = currentCredential()
-            if (credential.isNullOrBlank()) {
+                val credential = currentCredential()
+                // 蓝奏云 / PikPak 匿名解析，无需登录；115 列表匿名可用但下载需登录（先解析列表，下载时再校验）
+                val anonymous = isAnonymousPlatform
+            if (credential.isNullOrBlank() && !anonymous) {
                 uiState = ResolveUiState.Error("请先在「网盘」页登录${platformName()}")
                 return@launch
             }
             val repo = currentRepo()
-            repo.createSession(link, pwd, credential)
+            repo.createSession(link, pwd, credential.orEmpty())
                 .onSuccess { s ->
                     session = s
                     currentDirFid = currentDefaultDirFid()
                     dirStack.clear()
                     pathNames = emptyList()
-                    loadFiles(s, currentDirFid, credential, repo)
+                    loadFiles(s, currentDirFid, credential.orEmpty(), repo)
                 }
                 .onFailure { e ->
                     uiState = ResolveUiState.Error(e.message ?: "解析失败")
@@ -579,11 +607,11 @@ class ResolveViewModel(
         viewModelScope.launch {
             uiState = ResolveUiState.Loading
             val credential = currentCredential()
-            if (credential.isNullOrBlank()) {
+            if (credential.isNullOrBlank() && !isAnonymousPlatform) {
                 uiState = ResolveUiState.Error("登录已失效，请重新登录")
                 return@launch
             }
-            loadFiles(s, file.fid, credential, currentRepo())
+            loadFiles(s, file.fid, credential.orEmpty(), currentRepo())
         }
     }
 
@@ -596,8 +624,8 @@ class ResolveViewModel(
         viewModelScope.launch {
             uiState = ResolveUiState.Loading
             val credential = currentCredential()
-            if (credential.isNullOrBlank()) return@launch
-            loadFiles(s, currentDirFid, credential, currentRepo())
+            if (credential.isNullOrBlank() && !isAnonymousPlatform) return@launch
+            loadFiles(s, currentDirFid, credential.orEmpty(), currentRepo())
         }
     }
 
@@ -656,8 +684,9 @@ class ResolveViewModel(
         currentDirFid = if (dirStack.isEmpty()) currentDefaultDirFid() else dirStack.last()
         pathNames = pathNames.take(level)
         viewModelScope.launch {
-            val credential = currentCredential() ?: return@launch
-            loadFiles(s, currentDirFid, credential, currentRepo())
+            val credential = currentCredential()
+            if (credential.isNullOrBlank() && !isAnonymousPlatform) return@launch
+            loadFiles(s, currentDirFid, credential.orEmpty(), currentRepo())
         }
     }
 
@@ -674,7 +703,9 @@ class ResolveViewModel(
                     return@launch
                 }
                 val credential = currentCredential()
-                if (credential.isNullOrBlank()) {
+                // 蓝奏云 / PikPak 匿名解析：无需登录；115 下载需要登录（仓库内校验）
+                val anonymous = isAnonymousPlatform
+                if (credential.isNullOrBlank() && !anonymous) {
                     downloadError = "登录已失效，请重新登录"
                     return@launch
                 }
@@ -684,7 +715,7 @@ class ResolveViewModel(
                     SharePlatform.UC -> ucAccountRepository.getFreshCookie() ?: credential
                     else -> credential
                 }
-                currentRepo().getShareDownloadLink(s, file, quarkCred)
+                currentRepo().getShareDownloadLink(s, file, quarkCred.orEmpty())
                     .onSuccess { downloadLink = it }
                     .onFailure { downloadError = it.message ?: "获取下载链接失败" }
             } finally {
@@ -723,6 +754,9 @@ class ResolveViewModel(
         val isPan123 = currentPlatform == SharePlatform.PAN123
         val isAlipan = currentPlatform == SharePlatform.ALIPAN
         val isQuark = currentPlatform == SharePlatform.QUARK
+        val isP115 = currentPlatform == SharePlatform.P115
+        val isLanzou = currentPlatform == SharePlatform.LANZOU
+        val isPikpak = currentPlatform == SharePlatform.PIKPAK
         // 下载来源平台：按平台应用下载线程数设置
         val platform = when {
             isXunlei -> DownloadPlatform.XUNLEI
@@ -731,6 +765,9 @@ class ResolveViewModel(
             isC139 -> DownloadPlatform.C139
             isPan123 -> DownloadPlatform.PAN123
             isAlipan -> DownloadPlatform.ALIPAN
+            isP115 -> DownloadPlatform.P115
+            isLanzou -> DownloadPlatform.LANZOU
+            isPikpak -> DownloadPlatform.PIKPAK
             else -> DownloadPlatform.QUARK
         }
         // 【关键修复】夸克/UC 共用 __puus：取链与下载必须用同一份已刷新 Cookie（AlistGo/alist#830 类缺陷）
@@ -743,6 +780,16 @@ class ResolveViewModel(
         // 迅雷直链 URL 自带签名，无需 Cookie；夸克/UC/百度需 Cookie + UA；139 直链为 CDN 签名地址；123 直链需 Referer
         val headers = when {
             isXunlei -> mapOf("User-Agent" to XunleiConstants.APP_UA) // 迅雷直链必须用官方 app UA，浏览器 UA 会触发 CDN 降级（200整文件）
+            // 115：downurl 直链需 Cookie + 完整 UA + 115cdn Referer
+            isP115 -> mapOf(
+                "Cookie" to credential,
+                "User-Agent" to P115Constants.WEB_UA,
+                "Referer" to P115Constants.SHARE_API_BASE
+            )
+            // 蓝奏云：直链为 CDN 签名地址，需浏览器 UA
+            isLanzou -> mapOf("User-Agent" to LanzouConstants.UA)
+            // PikPak：web_content_link / 转码地址，需浏览器 UA
+            isPikpak -> mapOf("User-Agent" to PikPakConstants.USER_AGENT)
             isBaidu -> mapOf(
                 "Cookie" to credential,
                 "User-Agent" to BaiduConstants.UA_NETDISK
@@ -803,11 +850,12 @@ class ResolveViewModel(
             // 开始下载：先关闭弹窗（临时转存由下载完成 onComplete 清理，不在此时删）
             downloadLink = null
             val credential = currentCredential()
-            if (credential.isNullOrBlank()) {
+            val anonymous = isAnonymousPlatform
+            if (credential.isNullOrBlank() && !anonymous) {
                 downloadError = "请先登录网盘"
                 return@launch
             }
-            enqueueDownload(link, credential)
+            enqueueDownload(link, credential.orEmpty())
             downloadStarted = true
         }
     }
@@ -818,7 +866,7 @@ class ResolveViewModel(
         credential: String,
         repo: ShareResolveRepository
     ) {
-        repo.listFiles(s, dirFid, credential)
+        repo.listFiles(s, dirFid, credential.orEmpty())
             .onSuccess { files ->
                 uiState = ResolveUiState.Detail(s, files)
             }
@@ -842,6 +890,10 @@ class ResolveViewModel(
         private val pan123ResolveRepository: Pan123ResolveRepository,
         private val alipanAccountRepository: AlipanAccountRepository,
         private val alipanResolveRepository: AlipanResolveRepository,
+        private val p115AccountRepository: P115AccountRepository,
+        private val p115ResolveRepository: P115ResolveRepository,
+        private val lanzouResolveRepository: LanzouResolveRepository,
+        private val pikpakResolveRepository: PikPakResolveRepository,
         private val downloadManager: DownloadManager,
         private val bookmarkDao: BookmarkDao
     ) : ViewModelProvider.Factory {
@@ -856,6 +908,8 @@ class ResolveViewModel(
                 c139AccountRepository, c139ResolveRepository,
                 pan123AccountRepository, pan123ResolveRepository,
                 alipanAccountRepository, alipanResolveRepository,
+                p115AccountRepository, p115ResolveRepository,
+                lanzouResolveRepository, pikpakResolveRepository,
                 downloadManager,
                 bookmarkDao
             ) as T

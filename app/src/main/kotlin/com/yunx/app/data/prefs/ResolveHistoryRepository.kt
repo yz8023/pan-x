@@ -207,6 +207,9 @@ class ResolveHistoryRepository(
         SharePlatform.C139 -> "移动云盘"
         SharePlatform.PAN123 -> "123 云盘"
         SharePlatform.ALIPAN -> "阿里云盘"
+        SharePlatform.P115 -> "115 网盘"
+        SharePlatform.LANZOU -> "蓝奏云"
+        SharePlatform.PIKPAK -> "PikPak"
     }
 
     private companion object {

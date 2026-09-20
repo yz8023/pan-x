@@ -109,6 +109,17 @@ internal object SecureAccountDaos {
         override suspend fun clear() = raw.clear()
     }
 
+    fun p115(raw: P115AccountDao, cipher: CredentialCipher): P115AccountDao = object : P115AccountDao {
+        override fun observeAccount(): Flow<P115AccountEntity?> = raw.observeAccount().map { value ->
+            value?.let { decryptP115(raw, cipher, it) }
+        }
+        override suspend fun upsert(account: P115AccountEntity) = withContext(Dispatchers.IO) {
+            raw.upsert(encryptP115(cipher, account))
+        }
+        override suspend fun getAccount(): P115AccountEntity? = raw.getAccount()?.let { decryptP115(raw, cipher, it) }
+        override suspend fun clear() = raw.clear()
+    }
+
     private suspend fun decryptQuark(raw: QuarkAccountDao, cipher: CredentialCipher, stored: QuarkAccountEntity): QuarkAccountEntity? =
         withContext(Dispatchers.IO) {
             decryptOrClear(raw::clear) {
@@ -189,6 +200,15 @@ internal object SecureAccountDaos {
             }
         }
 
+    private suspend fun decryptP115(raw: P115AccountDao, cipher: CredentialCipher, stored: P115AccountEntity): P115AccountEntity? =
+        withContext(Dispatchers.IO) {
+            decryptOrClear(raw::clear) {
+                val plain = stored.copy(cookie = cipher.decrypt(stored.cookie, "p115.cookie"))
+                if (!cipher.isEncrypted(stored.cookie)) raw.upsert(encryptP115(cipher, plain))
+                plain
+            }
+        }
+
     private fun encryptQuark(cipher: CredentialCipher, value: QuarkAccountEntity) =
         value.copy(cookie = cipher.encrypt(value.cookie, "quark.cookie"))
     private fun encryptUc(cipher: CredentialCipher, value: UCAccountEntity) =
@@ -211,6 +231,8 @@ internal object SecureAccountDaos {
         accessToken = cipher.encrypt(value.accessToken, "alipan.accessToken"),
         refreshToken = cipher.encrypt(value.refreshToken, "alipan.refreshToken")
     )
+    private fun encryptP115(cipher: CredentialCipher, value: P115AccountEntity) =
+        value.copy(cookie = cipher.encrypt(value.cookie, "p115.cookie"))
 
     private suspend fun <T> decryptOrClear(clear: suspend () -> Unit, block: suspend () -> T): T? =
         try {

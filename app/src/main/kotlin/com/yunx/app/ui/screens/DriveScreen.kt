@@ -74,6 +74,7 @@ import com.yunx.app.data.db.BaiduAccountEntity
 import com.yunx.app.data.db.C139AccountEntity
 import com.yunx.app.data.db.Pan123AccountEntity
 import com.yunx.app.data.db.AlipanAccountEntity
+import com.yunx.app.data.db.P115AccountEntity
 import com.yunx.app.data.db.QuarkAccountEntity
 import com.yunx.app.data.db.UCAccountEntity
 import com.yunx.app.data.db.XunleiAccountEntity
@@ -114,6 +115,7 @@ fun DriveScreen(
     c139Account: C139AccountEntity?,
     pan123Account: Pan123AccountEntity?,
     alipanAccount: AlipanAccountEntity?,
+    p115Account: P115AccountEntity?,
     /** 夸克云盘浏览 ViewModel（网盘 Tab 内切换展示，非全屏） */
     quarkCloudViewModel: QuarkCloudViewModel,
     /** UC 网盘云盘浏览 ViewModel */
@@ -144,6 +146,8 @@ fun DriveScreen(
     onPan123Logout: () -> Unit,
     onAlipanLogin: () -> Unit,
     onAlipanLogout: () -> Unit,
+    onP115Login: () -> Unit,
+    onP115Logout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showQuarkSheet by remember { mutableStateOf(false) }
@@ -153,6 +157,7 @@ fun DriveScreen(
     var showC139Sheet by remember { mutableStateOf(false) }
     var showPan123Sheet by remember { mutableStateOf(false) }
     var showAlipanSheet by remember { mutableStateOf(false) }
+    var showP115Sheet by remember { mutableStateOf(false) }
     // 夸克云盘浏览：网盘 Tab 内切换（非全屏），切 Tab 再回来仍保留
     var showCloud by rememberSaveable { mutableStateOf(false) }
     // UC 网盘云盘浏览：网盘 Tab 内切换（非全屏）
@@ -215,6 +220,13 @@ fun DriveScreen(
         description = alipanAccount?.nickname ?: "点击登录，支持解析下载",
         avatarText = "云",
         isLoggedIn = alipanAccount != null
+    )
+    val p115 = DriveAccount(
+        id = "p115",
+        name = "115 网盘",
+        description = p115Account?.nickname ?: "点击登录，扫码解析下载",
+        avatarText = "115",
+        isLoggedIn = p115Account != null
     )
     val others = remember {
         emptyList<DriveAccount>()
@@ -414,6 +426,23 @@ fun DriveScreen(
                         }
                     )
                 }
+                item(key = p115.id) {
+                    // 115 网盘暂无个人云盘浏览（本轮仅登录+分享解析），已登录点击卡片直接打开账号弹窗
+                    DriveAccountCard(
+                        account = p115,
+                        quota = null,
+                        onClick = if (p115.isLoggedIn) {
+                            { showP115Sheet = true }
+                        } else {
+                            onP115Login
+                        },
+                        onMoreClick = if (p115.isLoggedIn) {
+                            { showP115Sheet = true }
+                        } else {
+                            null
+                        }
+                    )
+                }
                 items(others, key = { it.id }) { account ->
                     DriveAccountCard(account = account)
                 }
@@ -503,6 +532,18 @@ fun DriveScreen(
                 showAlipanSheet = false
             },
             onDismiss = { showAlipanSheet = false }
+        )
+    }
+
+    // 已登录 115 网盘：点击卡片弹出账号信息底部弹窗
+    if (showP115Sheet && p115Account != null) {
+        P115AccountSheet(
+            account = p115Account,
+            onLogout = {
+                onP115Logout()
+                showP115Sheet = false
+            },
+            onDismiss = { showP115Sheet = false }
         )
     }
 }

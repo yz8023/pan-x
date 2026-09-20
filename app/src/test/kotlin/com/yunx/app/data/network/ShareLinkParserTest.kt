@@ -34,7 +34,10 @@ class ShareLinkParserTest {
             "https://yun.139.com/shareweb/#/w/i/Abc_123" to (SharePlatform.C139 to "Abc_123"),
             "https://www.123pan.com/s/2785Vv-T4Ded" to (SharePlatform.PAN123 to "2785Vv-T4Ded"),
             "https://www.alipan.com/s/Abc123XyZ" to (SharePlatform.ALIPAN to "Abc123XyZ"),
-            "https://www.aliyundrive.com/s/Abc123XyZ" to (SharePlatform.ALIPAN to "Abc123XyZ")
+            "https://www.aliyundrive.com/s/Abc123XyZ" to (SharePlatform.ALIPAN to "Abc123XyZ"),
+            "https://115.com/s/sw6pw793wfp?password=w816" to (SharePlatform.P115 to "sw6pw793wfp"),
+            "https://pan.lanzoui.com/iZz123abc" to (SharePlatform.LANZOU to "pan.lanzoui.com/iZz123abc"),
+            "https://mypikpak.com/s/Abc_123XyZ" to (SharePlatform.PIKPAK to "Abc_123XyZ")
         )
 
         cases.forEach { (text, expected) ->
@@ -54,6 +57,34 @@ class ShareLinkParserTest {
     fun alipanTextPasswordIsExtracted() {
         val parsed = ShareLinkParser.parse("链接 https://www.alipan.com/s/Abc123XyZ 提取码：9yZ1")!!
         assertEquals(SharePlatform.ALIPAN, parsed.platform)
+        assertEquals("9yZ1", parsed.pwd)
+    }
+
+    @Test
+    fun p115UrlPasswordIsExtracted() {
+        val parsed = ShareLinkParser.parse("链接 https://115.com/s/sw6pw793wfp?password=w816")!!
+        assertEquals(SharePlatform.P115, parsed.platform)
+        assertEquals("w816", parsed.pwd)
+    }
+
+    @Test
+    fun lanzouUrlPasswordIsExtracted() {
+        val parsed = ShareLinkParser.parse("https://pan.lanzoui.com/iZz123abc 访问码：a1b2")!!
+        assertEquals(SharePlatform.LANZOU, parsed.platform)
+        assertEquals("a1b2", parsed.pwd)
+    }
+
+    @Test
+    fun lanzouMultiDomainIsSupported() {
+        val parsed = ShareLinkParser.parse("https://www.lanzouj.com/iZz123abc")!!
+        assertEquals(SharePlatform.LANZOU, parsed.platform)
+        assertEquals("www.lanzouj.com/iZz123abc", parsed.shareId)
+    }
+
+    @Test
+    fun pikpakUrlPasswordIsExtracted() {
+        val parsed = ShareLinkParser.parse("https://mypikpak.com/s/Abc_123XyZ 提取码：9yZ1")!!
+        assertEquals(SharePlatform.PIKPAK, parsed.platform)
         assertEquals("9yZ1", parsed.pwd)
     }
 

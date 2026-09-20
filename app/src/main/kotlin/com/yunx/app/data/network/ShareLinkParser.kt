@@ -19,7 +19,7 @@
 package com.yunx.app.data.network
 
 /** 网盘平台 */
-enum class SharePlatform { QUARK, UC, XUNLEI, BAIDU, C139, PAN123, ALIPAN }
+enum class SharePlatform { QUARK, UC, XUNLEI, BAIDU, C139, PAN123, ALIPAN, P115, LANZOU, PIKPAK }
 
 /**
  * 解析结果：share_id + 提取码 + 平台。
@@ -52,7 +52,13 @@ object ShareLinkParser {
     private val pan123SrrRegex = Regex("""api/srr\?sk=([A-Za-z0-9-]+)""", RegexOption.IGNORE_CASE)
     // 阿里云盘分享链接：https://www.alipan.com/s/<id> / https://www.aliyundrive.com/s/<id>
     private val alipanShareIdRegex = Regex("""(?:alipan|aliyundrive)\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
-    private val pwdInUrlRegex = Regex("""[?&]pwd=([A-Za-z0-9]+)""")
+    // 115 网盘分享链接：https://115.com/s/<code>?password=xxxx（需登录下载）
+    private val p115ShareIdRegex = Regex("""115\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
+    // 蓝奏云分享链接：https://pan.lanzoui.com/<id> 等（域名多变，捕获 host+id）
+    private val lanzouShareIdRegex = Regex("""([a-z0-9][a-z0-9.-]*lanzou[a-z]*\.(?:com|cn)/[A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
+    // PikPak 分享链接：https://mypikpak.com/s/<id>
+    private val pikpakShareIdRegex = Regex("""mypikpak\.com/s/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+    private val pwdInUrlRegex = Regex("""[?&](?:pwd|password|passcode|code)=([A-Za-z0-9]+)""")
     private val pwdInTextRegex = Regex("""(?:提取码|访问码|密码)[：:]\s*([A-Za-z0-9]{4,8})""")
 
     fun parse(text: String): ParsedShare? {
@@ -112,6 +118,24 @@ object ShareLinkParser {
             val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
                 ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
             return ParsedShare(shareId = sid, pwd = pwd, platform = SharePlatform.ALIPAN)
+        }
+        // 115 网盘链接：https://115.com/s/<code>（提取码取 password/分享文案）
+        p115ShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { sid ->
+            val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
+                ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
+            return ParsedShare(shareId = sid, pwd = pwd, platform = SharePlatform.P115)
+        }
+        // 蓝奏云链接：https://<host>/<id>（shareId 存 host/id，仓库据此定位分享页）
+        lanzouShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { hostAndId ->
+            val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
+                ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
+            return ParsedShare(shareId = hostAndId, pwd = pwd, platform = SharePlatform.LANZOU)
+        }
+        // PikPak 链接：https://mypikpak.com/s/<id>
+        pikpakShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { sid ->
+            val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
+                ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
+            return ParsedShare(shareId = sid, pwd = pwd, platform = SharePlatform.PIKPAK)
         }
         return null
     }

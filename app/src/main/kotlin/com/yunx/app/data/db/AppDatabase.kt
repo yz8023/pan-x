@@ -28,8 +28,8 @@ import com.yunx.app.data.security.AndroidKeystoreCredentialCipher
 import com.yunx.app.data.security.CredentialCipher
 
 @Database(
-    entities = [QuarkAccountEntity::class, DownloadTaskEntity::class, UCAccountEntity::class, XunleiAccountEntity::class, BaiduAccountEntity::class, C139AccountEntity::class, Pan123AccountEntity::class, AlipanAccountEntity::class, BookmarkEntity::class],
-    version = 17,
+    entities = [QuarkAccountEntity::class, DownloadTaskEntity::class, UCAccountEntity::class, XunleiAccountEntity::class, BaiduAccountEntity::class, C139AccountEntity::class, Pan123AccountEntity::class, AlipanAccountEntity::class, BookmarkEntity::class, P115AccountEntity::class],
+    version = 18,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +50,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun rawAlipanAccountDao(): AlipanAccountDao
 
+    abstract fun rawP115AccountDao(): P115AccountDao
+
     abstract fun bookmarkDao(): BookmarkDao
 
     private lateinit var credentialCipher: CredentialCipher
@@ -61,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     fun c139AccountDao(): C139AccountDao = SecureAccountDaos.c139(rawC139AccountDao(), credentialCipher)
     fun pan123AccountDao(): Pan123AccountDao = SecureAccountDaos.pan123(rawPan123AccountDao(), credentialCipher)
     fun alipanAccountDao(): AlipanAccountDao = SecureAccountDaos.alipan(rawAlipanAccountDao(), credentialCipher)
+    fun p115AccountDao(): P115AccountDao = SecureAccountDaos.p115(rawP115AccountDao(), credentialCipher)
 
     companion object {
         @Volatile
@@ -81,7 +84,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14,
                         MIGRATION_14_15,
                         MIGRATION_15_16,
-                        MIGRATION_16_17
+                        MIGRATION_16_17,
+                        MIGRATION_17_18
                     )
                     // 早期开发版（1-8）无可靠 schema；从 v9 起必须保留凭证和下载任务
                     .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8)
@@ -159,6 +163,20 @@ abstract class AppDatabase : RoomDatabase() {
                         "`id` TEXT NOT NULL, " +
                         "`accessToken` TEXT NOT NULL, " +
                         "`refreshToken` TEXT NOT NULL, " +
+                        "`account` TEXT NOT NULL, " +
+                        "`nickname` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `p115_account` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`cookie` TEXT NOT NULL, " +
                         "`account` TEXT NOT NULL, " +
                         "`nickname` TEXT NOT NULL, " +
                         "`updatedAt` INTEGER NOT NULL, " +

@@ -126,6 +126,9 @@ private val threadPlatforms = listOf(
     ThreadPlatform(DownloadPlatform.C139, "139 网盘"),
     ThreadPlatform(DownloadPlatform.PAN123, "123 云盘"),
     ThreadPlatform(DownloadPlatform.ALIPAN, "阿里云盘"),
+    ThreadPlatform(DownloadPlatform.P115, "115 网盘"),
+    ThreadPlatform(DownloadPlatform.LANZOU, "蓝奏云"),
+    ThreadPlatform(DownloadPlatform.PIKPAK, "PikPak"),
 )
 
 /** 跳转系统「应用通知」设置页（Android 8+ 通用入口；失败时退回应用详情页） */
