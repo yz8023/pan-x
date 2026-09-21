@@ -48,7 +48,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - Release 流程：git add + commit → push main → git tag vX.Y.Z → push tag → `export GH_TOKEN=$(echo -e "protocol=https\nhost=github.com\n" | git credential fill | awk -F= '$1=="password"{print $2}')` → `gh release create vX.Y.Z <apk> --repo yz8023/pan-x`
   - 发布 APK 用 debug 包（唯一签名配置），命名 `YunX-v<版本>-debug.apk`
   - 更新检测 UpdateChecker.kt 的 RELEASES_LATEST_URL 必须指向本仓库（yz8023/pan-x）而非上游
-  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.5/20
+  - 版本号在 app/build.gradle.kts versionCode/versionName 维护；当前 v1.4.6/21
 
 [Project Knowledge Summary]
 - Date: 2026-09-20
@@ -111,3 +111,23 @@ Entries discovered by the Agent during task execution should follow this format:
   - Android 10（Q）MediaStore 保存失败会回退传统路径，仍需 WRITE 权限（仅 Android 11+ 免权限）；storagePermissionProvider 的免权限判定要用 `SDK_INT >= R` 而非 `>= Q`
   - storagePermissionProvider 是单一 CompletableDeferred 槽位，多任务并发保存互相覆盖会挂死，需用 Mutex 串行化
   - 百度「升级后每次都要重登」排查结论：无版本号驱动的清数据逻辑；debug.keystore 稳定 + Room 迁移非破坏性，就地覆盖安装不丢登录；唯一自清路径是 SecureAccountDaos.decryptOrClear 解密失败即 clear() 删行 → 修复为解密失败保留密文行返回 null（Keystore 暂不可用不永久丢账号）
+
+[Project Knowledge Summary]
+- Date: 2026-09-21
+- Context: Discovered by Agent while implementing Android 11+ 存储权限引导 + 缩小安装包（v1.4.6）
+- Category: Build Methods
+- Instructions:
+  - debug 包 26M 过大：debug buildType 不启用 R8 压缩/资源收缩。已加 release buildType：`isMinifyEnabled=true` + `isShrinkResources=true` + `getDefaultProguardFile("proguard-android-optimize.txt")` + `proguard-rules.pro`，签名复用 debug keystore（SHA1 0E:79:05:DA…）→ 覆盖安装兼容既有 debug 包。release 包仅 4.1M
+  - 发布用 `./gradlew assembleRelease`（约 8 分钟，R8 慢）后取 `app/build/outputs/apk/release/app-release.apk`，命名 `YunX-v<版本>-release.apk`；签名校验：`keytool -printcert -jarfile <apk>` 的 Owner 应为 Android Debug
+  - 验证权限是否进包：读 `app/build/intermediates/packaged_manifests/{variant}/process{Name}ManifestForPackage/AndroidManifest.xml`
+  - 构建/发布命令更新：`./gradlew compileDebugKotlin testDebugUnitTest assembleRelease -Dorg.gradle.jvmargs=-Xmx1024m --max-workers=2`
+
+[Project Knowledge Summary]
+- Date: 2026-09-21
+- Context: Discovered by Agent while implementing Android 11+ 存储权限引导（v1.4.6）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Android 11+ 系统「权限管理」页不显示存储权限属正常：WRITE_EXTERNAL_STORAGE 声明带 maxSdkVersion="29"，Android 11+ 仅有特殊权限「所有文件访问（MANAGE_EXTERNAL_STORAGE）」
+  - MANAGE_EXTERNAL_STORAGE 无运行时弹窗，只能跳 `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`（带 `package:` Uri）+ FLAG_ACTIVITY_NEW_TASK 打开系统设置；应在 Android 11+ 未授权时引导用户去开启
+  - Android 11+ 分区存储下 MediaStore/SAF 保存无需任何权限，传统文件路径（MediaStore 回退）才需要「所有文件访问」；引导跳设置每会话仅触发一次（allFilesAccessPrompted 标志），避免每次入队/保存都打断用户
+

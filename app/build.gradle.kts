@@ -33,8 +33,8 @@ android {
         applicationId = "com.yunx.app"
         minSdk = 23
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.4.5"
+        versionCode = 21
+        versionName = "1.4.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -51,6 +51,16 @@ android {
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debug")
+        }
+        release {
+            // 复用 debug.keystore 签名：与既有 debug 安装签名一致，可覆盖安装升级
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 

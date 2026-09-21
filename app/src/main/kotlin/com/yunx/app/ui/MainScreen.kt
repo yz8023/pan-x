@@ -77,6 +77,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -291,10 +292,11 @@ fun MainScreen() {
             showSpeedProvider = { settings.notificationShowSpeed }
         )
     }
-    // Android 9/10 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权：
-    // 由 DownloadManager.storagePermissionProvider 触发动态申请，授权后继续保存。
-    // ★ v1.4.5 修复：Android 10（Q）MediaStore 保存失败会回退传统路径，同样需要 WRITE 权限，
-    //   故只在 Android 11+（R）免权限；请求用 Mutex 串行化，避免多任务并发覆盖单槽位挂死。
+    // Android 9/10 写公共 Download 需要 WRITE_EXTERNAL_STORAGE 运行时授权；
+    // Android 11+ 需要「所有文件访问」特殊权限（MANAGE_EXTERNAL_STORAGE，只能跳系统设置开启）。
+    // ★ v1.4.5 修复：Android 10（Q）MediaStore 保存失败会回退传统路径，同样需要 WRITE 权限；
+    //   ★ v1.4.6 修复：Android 11+ 未授予「所有文件访问」时引导去系统设置开启，不再静默放行。
+    //   请求用 Mutex 串行化，避免多任务并发覆盖单槽位挂死。
     var pendingStoragePermission by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
     val storagePermissionMutex = remember { Mutex() }
     val storagePermissionLauncher = rememberLauncherForActivityResult(
@@ -303,10 +305,25 @@ fun MainScreen() {
         pendingStoragePermission?.complete(granted)
         pendingStoragePermission = null
     }
+    // Android 11+「所有文件访问」无运行时弹窗，只能跳系统设置开启：每次会话引导一次即可，
+    // 避免每次入队/保存都跳设置打断用户；未引导时下载正常走 MediaStore（无需任何权限）。
+    var allFilesAccessPrompted by remember { mutableStateOf(false) }
     downloadManager.storagePermissionProvider = {
-        // Android 11+（R）分区存储强制，MediaStore/SAF 无需存储权限；
-        // Android 9/10（含 requestLegacyExternalStorage）仍需 WRITE 权限。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ 分区存储：MediaStore/SAF 保存无需权限；
+            // 仅当需要传统文件路径（MediaStore 回退）时才需要「所有文件访问」。
+            if (!Environment.isExternalStorageManager() && !allFilesAccessPrompted) {
+                allFilesAccessPrompted = true
+                withContext(Dispatchers.Main) {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                                .setData(Uri.parse("package:${context.packageName}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            }
             true
         } else {
             storagePermissionMutex.withLock {
