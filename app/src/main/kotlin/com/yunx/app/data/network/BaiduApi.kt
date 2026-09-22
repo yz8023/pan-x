@@ -18,6 +18,7 @@
 
 package com.yunx.app.data.network
 
+import android.util.Log
 import com.yunx.app.data.network.model.QuotaInfo
 import com.yunx.app.data.network.model.ShareFile
 import kotlinx.coroutines.Dispatchers
@@ -238,14 +239,20 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
             .build()
         runCatching {
             val json = executeJson(request)
-            if (json.optInt("errno") != 0) return@runCatching emptyList()
+            if (json.optInt("errno") != 0) {
+                Log.w(TAG, "listDir($dir) errno=${json.optInt("errno")}，返回空目录")
+                return@runCatching emptyList()
+            }
             val array = json.optJSONArray("list") ?: return@runCatching emptyList()
             buildList {
                 for (i in 0 until array.length()) {
                     array.optJSONObject(i)?.let { add(it.optString("path")) }
                 }
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            Log.w(TAG, "listDir($dir) 异常: ${it.message}", it)
+            emptyList()
+        }
     }
 
     /**
@@ -411,7 +418,10 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
                 .build()
             val pageFiles = runCatching {
                 val json = executeJson(request)
-                if (json.optInt("errno") != 0) return@runCatching emptyList()
+                if (json.optInt("errno") != 0) {
+                    Log.w(TAG, "listCloudFiles($dir) page=$page errno=${json.optInt("errno")}，返回空列表")
+                    return@runCatching emptyList()
+                }
                 val array = json.optJSONArray("list") ?: return@runCatching emptyList()
                 buildList {
                     for (i in 0 until array.length()) {
@@ -429,7 +439,10 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
                         )
                     }
                 }
-            }.getOrDefault(emptyList())
+            }.getOrElse {
+                Log.w(TAG, "listCloudFiles($dir) page=$page 异常: ${it.message}", it)
+                emptyList()
+            }
             // 空页（含单页请求失败）视为已到末页，停止翻页
             if (pageFiles.isEmpty()) break
             all += pageFiles
@@ -563,22 +576,41 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
             val response = client.newCall(request).execute()
             val body = response.use { it.body?.string() ?: return@runCatching null }
             val json = JSONObject(body)
-            if (json.optInt("errno") != 0) return@runCatching null
+            if (json.optInt("errno") != 0) {
+                Log.w(TAG, "getQuota errno=${json.optInt("errno")}")
+                return@runCatching null
+            }
             QuotaInfo(
                 used = json.optLong("used"),
                 total = json.optLong("total")
             )
-        }.getOrNull()
+        }.getOrElse {
+            Log.w(TAG, "getQuota 异常: ${it.message}", it)
+            null
+        }
     }
 
     // ---------- 公共 ----------
 
     private fun executeJson(request: Request): JSONObject {
-        val response = client.newCall(request).execute()
+        // ★ v1.4.8：统一记录百度接口失败。此前 listCloudFiles/listDir/getQuota 等对 errno!=0 或网络异常
+        //   静默返回空列表/空结果，UI 表现为「已登录但列表为空」且日志无迹可查，排障极难。
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: Exception) {
+            Log.w(TAG, "百度请求异常 ${request.url}: ${e.message}", e)
+            throw BaiduApiException("网络请求失败：${e.message}")
+        }
         val body = response.use { it.body?.string() ?: throw BaiduApiException("请求失败：响应为空") }
-        return runCatching { JSONObject(body) }.getOrElse {
+        val json = runCatching { JSONObject(body) }.getOrElse {
+            Log.w(TAG, "百度响应解析失败 ${request.url}: ${body.take(200)}")
             throw BaiduApiException("响应解析失败")
         }
+        val errno = json.optInt("errno", 0)
+        if (errno != 0) {
+            Log.w(TAG, "百度接口错误 ${request.url} errno=$errno err_msg=${json.optString("err_msg")} show_msg=${json.optString("show_msg")}")
+        }
+        return json
     }
 
     private fun checkErrno(json: JSONObject, fallback: String) {
@@ -591,4 +623,8 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
     }
 
     private fun urlEncode(value: String): String = URLEncoder.encode(value, "UTF-8")
+
+    private companion object {
+        const val TAG = "YunX-BaiduApi"
+    }
 }
