@@ -140,5 +140,15 @@ Entries discovered by the Agent during task execution should follow this format:
   - 用户正常安装为 release 包：日志头部（YunX version=x.y.z build=code）可确认实际安装版本与 Android 版本（本设备 OPPO PLG110 Android 16/SDK 36，非用户以为的 Android 15），排查前先核验
   - 下载任务失败即时性判断：enqueue 时间到任务 start 再到 failed 若在 ~20ms 内且堆栈指向网络/权限检查，属任务启动前置检查；可通过「应用内 设置→导出日志」链路拿用户侧 logcat（压缩分析报告）定位
   - ↑ 该权限是 normal 权限：仅 manifest 声明即安装期授权，不会出现在运行时权限弹窗，也不会在系统「权限管理」页列出——勿在 UI 请求它
-  - 版本号已更新：当前 22/"1.4.7"，发布流程与 v1.4.6 一致（release 包 + R8）
+  - 版本号已更新：当前 23/"1.4.8"，发布流程与 v1.4.6 一致（release 包 + R8）
+
+[Project Knowledge Summary]
+- Date: 2026-09-22
+- Context: Discovered by Agent while diagnosing 百度云盘列表为空（v1.4.8）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 百度云盘「已登录但列表为空」的根因判定链：登录态只看 DB 账号行存在（MainScreen.kt baiduLoginState），不校验服务端会话；token 本地能解密 ≠ 百度服务端认这个 BDUSS。请求失败若被 runCatching 吞掉会表现为空列表而非报错
+  - BaiduApi 的 listCloudFiles/listDir/getQuota 对 errno!=0 或网络异常静默返回空/空列表（v1.4.8 起统一记录 errno/err_msg/异常日志，tag=YunX-BaiduApi），排查时先在导出日志中看 errno：errno=-6 会话无效需重登，其余为接口侧问题
+  - 判断「升级 APK 导致的功能异常」要先核对两次发布间该功能相关代码的 diff：v1.4.6 引入 R8 混淆是主要可疑点，但百度链路用标准 OkHttp+org.json+平台常量，无反射/注解，R8 不破坏
+  - 构建 release 时 `-Dorg.gradle.jvmargs=-Xmx1024m` 会覆盖 gradle.properties 的 2048m 导致 R8/lint OOM，必须用 -Xmx2048m
 
