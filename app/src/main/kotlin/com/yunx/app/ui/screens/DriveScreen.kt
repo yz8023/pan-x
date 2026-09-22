@@ -430,7 +430,7 @@ fun DriveScreen(
                     // 115 网盘暂无个人云盘浏览（本轮仅登录+分享解析），已登录点击卡片直接打开账号弹窗
                     DriveAccountCard(
                         account = p115,
-                        quota = null,
+                        quota = driveQuotaViewModel.p115Quota.collectAsState().value,
                         onClick = if (p115.isLoggedIn) {
                             { showP115Sheet = true }
                         } else {

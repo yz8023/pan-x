@@ -18,6 +18,7 @@
 
 package com.yunx.app.data.network
 
+import com.yunx.app.data.network.model.QuotaInfo
 import com.yunx.app.data.network.model.ShareFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -210,6 +211,27 @@ class P115Api(
         data.optString("url")
             .takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("获取下载链接失败")
+    }
+
+    // ---------- 网盘空间详情 ----------
+
+    /** 网盘空间详情：GET /files/index_info（需登录 Cookie；data.space_info.all_total.size 总容量 / all_use.size 已用，字节） */
+    suspend fun getQuota(cookie: String): QuotaInfo? = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = executeJson(
+                Request.Builder()
+                    .url(P115Constants.INDEX_INFO_URL)
+                    .header("User-Agent", P115Constants.WEB_UA)
+                    .header("Cookie", cookie)
+                    .build()
+            )
+            checkState(json, "获取空间详情失败")
+            val space = json.optJSONObject("data")?.optJSONObject("space_info")
+                ?: return@runCatching null
+            val total = space.optJSONObject("all_total")?.optLong("size") ?: 0L
+            val used = space.optJSONObject("all_use")?.optLong("size") ?: 0L
+            if (total <= 0) null else QuotaInfo(used = used, total = total)
+        }.getOrNull()
     }
 
     // ---------- 内部工具 ----------

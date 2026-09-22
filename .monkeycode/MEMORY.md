@@ -156,6 +156,15 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while implementing 网盘认证导出可选加密（v1.4.9）
 - Category: Build Methods
 - Instructions:
-  - 版本号已更新：当前 24/"1.4.9"，发布流程与 v1.4.6 一致（release 包 + R8）
   - 认证备份导出允许空密码（导出明文 .json，走 AuthCrypto.isEncrypted 魔数识别导入）或任意长度密码（加密 .yunx）；8 位强制校验需同时删除 AuthBackupManager.export 与 AuthCrypto.encrypt 两处，UI 侧 ExportAuthDialog 按钮/文案同步（导入侧本就支持明文路径，无需改）
+
+[Project Knowledge Summary]
+- Date: 2026-09-22
+- Context: Discovered by Agent while fixing 115 分享链接无法识别 + 115 登录后无空间显示（v1.5.0）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 版本号已更新：当前 25/"1.5.0"，发布流程与 v1.4.6 一致（release 包 + R8）
+  - 115 分享链接域名有两种：`115.com/s/<code>` 与 `115cdn.com/s/<code>`（App 内复制的分享链接用 115cdn.com）；ShareLinkParser 的 p115ShareIdRegex 须匹配 `(?:115cdn|115)\.com/s/`，只写 `115\.com` 会导致 App 内复制的链接无法识别
+  - 115 网盘空间接口 `GET https://webapi.115.com/files/index_info`（需登录 Cookie + WEB_UA），返回 `data.space_info.all_total.size`（总容量）/ `all_use.size`（已用），字节单位；参照 SheltonZhu/115driver info.go
+  - DriveQuotaViewModel 是「网盘页空间总览」唯一数据源，新增平台必须同步改：VM 构造参数/StateFlow/loadAll/Factory + MainScreen 的 Factory 调用 + DriveScreen 卡片 quota 参数
 

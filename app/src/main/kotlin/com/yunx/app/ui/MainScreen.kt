@@ -590,7 +590,8 @@ fun MainScreen() {
             { xunleiRepository.getAccount()?.captchaToken },
             baiduApi, { baiduRepository.getAccount()?.cookie },
             c139Api, { c139Repository.getAccount()?.cookie },
-            pan123Api, { pan123Repository.getAccount()?.accessToken }
+            pan123Api, { pan123Repository.getAccount()?.accessToken },
+            p115Api, { p115Repository.getAccount()?.cookie }
         )
     )
     val xunleiResolveRepository = remember {

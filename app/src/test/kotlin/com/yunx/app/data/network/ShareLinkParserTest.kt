@@ -68,6 +68,16 @@ class ShareLinkParserTest {
     }
 
     @Test
+    fun p115CdnDomainWithHashUrlIsParsed() {
+        val parsed = ShareLinkParser.parse(
+            "https://115cdn.com/s/swspsi13wt4?password=yfb7#\n52种炒饭技巧.pdf\n访问码：yfb7\n复制这段内容，可在115生活App中直接打开！"
+        )!!
+        assertEquals(SharePlatform.P115, parsed.platform)
+        assertEquals("swspsi13wt4", parsed.shareId)
+        assertEquals("yfb7", parsed.pwd)
+    }
+
+    @Test
     fun lanzouUrlPasswordIsExtracted() {
         val parsed = ShareLinkParser.parse("https://pan.lanzoui.com/iZz123abc 访问码：a1b2")!!
         assertEquals(SharePlatform.LANZOU, parsed.platform)

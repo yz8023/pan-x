@@ -45,6 +45,9 @@ object P115Constants {
     /** 分享文件下载直链：GET /webapi/share/downurl（需登录 Cookie） */
     const val SHARE_DOWNURL_URL = "$SHARE_API_BASE/webapi/share/downurl"
 
+    /** 网盘空间详情：GET /files/index_info（需登录 Cookie；返回 data.space_info.all_total/all_use 等） */
+    const val INDEX_INFO_URL = "https://webapi.115.com/files/index_info"
+
     // ---------- 公共请求头 ----------
 
     /** 浏览器 UA（web 系抓包；分享接口需完整 UA，缺 UA 返回 405） */

@@ -54,8 +54,8 @@ object ShareLinkParser {
     private val pan123SrrRegex = Regex("""api/srr\?sk=([A-Za-z0-9-]+)""", RegexOption.IGNORE_CASE)
     // 阿里云盘分享链接：https://www.alipan.com/s/<id> / https://www.aliyundrive.com/s/<id>
     private val alipanShareIdRegex = Regex("""(?:alipan|aliyundrive)\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
-    // 115 网盘分享链接：https://115.com/s/<code>?password=xxxx（需登录下载）
-    private val p115ShareIdRegex = Regex("""115\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
+    // 115 网盘分享链接：https://115.com/s/<code> 或 https://115cdn.com/s/<code>（提取码取 password/分享文案）
+    private val p115ShareIdRegex = Regex("""(?:115cdn|115)\.com/s/([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
     // 蓝奏云分享链接：https://pan.lanzoui.com/<id> 等（域名多变，捕获 host+id）
     private val lanzouShareIdRegex = Regex("""([a-z0-9][a-z0-9.-]*lanzou[a-z]*\.(?:com|cn)/[A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
     // PikPak 分享链接：https://mypikpak.com/s/<id>
