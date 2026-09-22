@@ -131,3 +131,14 @@ Entries discovered by the Agent during task execution should follow this format:
   - MANAGE_EXTERNAL_STORAGE 无运行时弹窗，只能跳 `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`（带 `package:` Uri）+ FLAG_ACTIVITY_NEW_TASK 打开系统设置；应在 Android 11+ 未授权时引导用户去开启
   - Android 11+ 分区存储下 MediaStore/SAF 保存无需任何权限，传统文件路径（MediaStore 回退）才需要「所有文件访问」；引导跳设置每会话仅触发一次（allFilesAccessPrompted 标志），避免每次入队/保存都打断用户
 
+[Project Knowledge Summary]
+- Date: 2026-09-22
+- Context: Discovered by Agent while fixing 所有网盘下载即刻失败（Android 16 上全部触发 v1.4.7）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - IsNetworkAvailable / ConnectivityManager 相关 API（getActiveNetwork/getNetworkCapabilities）必须声明 `android.permission.ACCESS_NETWORK_STATE`，缺失时在 Android 上抛 SecurityException（消息含 "permission"），又会被 DownloadFailurePolicy 的 "permission" 贪婪匹配误标成「没有保存文件所需的存储权限」——排查下载失败要先区分底层异常类型，不要被映射后的文案带偏
+  - 用户正常安装为 release 包：日志头部（YunX version=x.y.z build=code）可确认实际安装版本与 Android 版本（本设备 OPPO PLG110 Android 16/SDK 36，非用户以为的 Android 15），排查前先核验
+  - 下载任务失败即时性判断：enqueue 时间到任务 start 再到 failed 若在 ~20ms 内且堆栈指向网络/权限检查，属任务启动前置检查；可通过「应用内 设置→导出日志」链路拿用户侧 logcat（压缩分析报告）定位
+  - ↑ 该权限是 normal 权限：仅 manifest 声明即安装期授权，不会出现在运行时权限弹窗，也不会在系统「权限管理」页列出——勿在 UI 请求它
+  - 版本号已更新：当前 22/"1.4.7"，发布流程与 v1.4.6 一致（release 包 + R8）
+

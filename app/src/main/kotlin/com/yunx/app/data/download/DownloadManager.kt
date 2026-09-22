@@ -606,13 +606,18 @@ class DownloadManager(
     private fun isNetworkAvailable(): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return true
-        val network = manager.activeNetwork ?: return false
-        val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        if (!validated) return false
-        return !wifiOnlyProvider() ||
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        // ★ v1.4.7 修复：ACCESS_NETWORK_STATE 缺失/被拒绝时 getActiveNetwork() 抛 SecurityException，
+        //   曾导致所有下载点即失败并误报「没有保存文件所需的存储权限」。此处降级为「假设网络可用」，
+        //   让实际网络请求自行判断（下载最终失败会反映真实网络状态）。
+        return runCatching {
+            val network = manager.activeNetwork ?: return@runCatching false
+            val capabilities = manager.getNetworkCapabilities(network) ?: return@runCatching false
+            val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            if (!validated) return@runCatching false
+            !wifiOnlyProvider() ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        }.getOrDefault(true)
     }
 
     private fun networkWaitText(): String =
