@@ -459,7 +459,7 @@ fun SettingsScreen(
         SettingsItem(
             icon = Icons.Outlined.Backup,
             title = "导出网盘认证",
-            description = "使用至少 8 位口令加密 Cookie/JWT 后导出",
+            description = "可设置密码加密，留空则导出明文 Cookie/JWT",
             onClick = { showExportAuthDialog = true }
         )
 
@@ -743,7 +743,7 @@ fun SettingsScreen(
                             SnackbarController.show("导出失败")
                             return@launch
                         }
-                        val encrypted = true
+                        val encrypted = password.isNotBlank()
                         val saved = withContext(Dispatchers.IO) {
                             backupManager.saveToDownloads(context, content, encrypted)
                         }
@@ -1032,7 +1032,7 @@ private fun ExportAuthDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "设置至少 8 位密码对认证文件进行 AES 加密。密码请务必牢记，丢失无法找回。",
+                    text = "可设置密码对认证文件进行 AES 加密。密码请务必牢记，丢失无法找回；留空则不加密，导出明文备份。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1040,7 +1040,7 @@ private fun ExportAuthDialog(
                     value = password,
                     onValueChange = { password = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("加密密码（至少 8 位）") },
+                    label = { Text("加密密码（可选，留空则不加密）") },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     singleLine = true
@@ -1075,10 +1075,7 @@ private fun ExportAuthDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onConfirm(password, onlyLoggedIn) },
-                enabled = password.length >= 8
-            ) { Text("导出") }
+            Button(onClick = { onConfirm(password, onlyLoggedIn) }) { Text("导出") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }

@@ -140,7 +140,6 @@ Entries discovered by the Agent during task execution should follow this format:
   - 用户正常安装为 release 包：日志头部（YunX version=x.y.z build=code）可确认实际安装版本与 Android 版本（本设备 OPPO PLG110 Android 16/SDK 36，非用户以为的 Android 15），排查前先核验
   - 下载任务失败即时性判断：enqueue 时间到任务 start 再到 failed 若在 ~20ms 内且堆栈指向网络/权限检查，属任务启动前置检查；可通过「应用内 设置→导出日志」链路拿用户侧 logcat（压缩分析报告）定位
   - ↑ 该权限是 normal 权限：仅 manifest 声明即安装期授权，不会出现在运行时权限弹窗，也不会在系统「权限管理」页列出——勿在 UI 请求它
-  - 版本号已更新：当前 23/"1.4.8"，发布流程与 v1.4.6 一致（release 包 + R8）
 
 [Project Knowledge Summary]
 - Date: 2026-09-22
@@ -151,4 +150,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - BaiduApi 的 listCloudFiles/listDir/getQuota 对 errno!=0 或网络异常静默返回空/空列表（v1.4.8 起统一记录 errno/err_msg/异常日志，tag=YunX-BaiduApi），排查时先在导出日志中看 errno：errno=-6 会话无效需重登，其余为接口侧问题
   - 判断「升级 APK 导致的功能异常」要先核对两次发布间该功能相关代码的 diff：v1.4.6 引入 R8 混淆是主要可疑点，但百度链路用标准 OkHttp+org.json+平台常量，无反射/注解，R8 不破坏
   - 构建 release 时 `-Dorg.gradle.jvmargs=-Xmx1024m` 会覆盖 gradle.properties 的 2048m 导致 R8/lint OOM，必须用 -Xmx2048m
+
+[Project Knowledge Summary]
+- Date: 2026-09-22
+- Context: Discovered by Agent while implementing 网盘认证导出可选加密（v1.4.9）
+- Category: Build Methods
+- Instructions:
+  - 版本号已更新：当前 24/"1.4.9"，发布流程与 v1.4.6 一致（release 包 + R8）
+  - 认证备份导出允许空密码（导出明文 .json，走 AuthCrypto.isEncrypted 魔数识别导入）或任意长度密码（加密 .yunx）；8 位强制校验需同时删除 AuthBackupManager.export 与 AuthCrypto.encrypt 两处，UI 侧 ExportAuthDialog 按钮/文案同步（导入侧本就支持明文路径，无需改）
 
