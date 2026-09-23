@@ -45,9 +45,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
@@ -99,6 +101,46 @@ fun P115LoginScreen(
     var statusText by remember { mutableStateOf("正在获取二维码…") }
     var isLoading by remember { mutableStateOf(true) }
     var isSaving by remember { mutableStateOf(false) }
+    var useQrLogin by remember { mutableStateOf(true) }
+    var cookieInput by remember { mutableStateOf("") }
+
+    /** 校验并保存粘贴的 Cookie */
+    fun loginWithCookie() {
+        val cookie = cookieInput.trim()
+        if (cookie.isBlank()) {
+            statusText = "请先粘贴 Cookie"
+            viewModel.setQrStatus(statusText)
+            return
+        }
+        scope.launch {
+            isSaving = true
+            statusText = "正在校验 Cookie…"
+            viewModel.setQrStatus(statusText)
+            runCatching { api.validateCookie(cookie) }
+                .onSuccess { valid ->
+                    if (!valid) {
+                        statusText = "Cookie 无效或已过期，请重新从浏览器复制"
+                        viewModel.setQrStatus(statusText)
+                        isSaving = false
+                        return@onSuccess
+                    }
+                    val saved = viewModel.saveCookie(cookie)
+                    isSaving = false
+                    if (saved) {
+                        SnackbarController.show("115 网盘登录成功")
+                        onSaved()
+                    } else {
+                        statusText = "登录态保存失败，请重试"
+                        viewModel.setQrStatus(statusText)
+                    }
+                }
+                .onFailure {
+                    isSaving = false
+                    statusText = "Cookie 校验失败：${it.message}"
+                    viewModel.setQrStatus(statusText)
+                }
+        }
+    }
 
     /** 获取二维码会话并加载图片 */
     fun loadQr() {
@@ -257,56 +299,118 @@ fun P115LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // 二维码卡片
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isLoading || qrContent == null) {
-                        CircularProgressIndicator()
-                    } else {
-                        AndroidView(
-                            factory = { webView },
-                            modifier = Modifier
-                                .size(280.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                    }
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = useQrLogin,
+                    onClick = { useQrLogin = true },
+                    label = { Text("扫码登录") },
+                    enabled = !isSaving
+                )
+                FilterChip(
+                    selected = !useQrLogin,
+                    onClick = { useQrLogin = false },
+                    label = { Text("粘贴 Cookie") },
+                    enabled = !isSaving
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 状态提示
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
+            if (useQrLogin) {
+                // 二维码卡片
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLoading || qrContent == null) {
+                            CircularProgressIndicator()
+                        } else {
+                            AndroidView(
+                                factory = { webView },
+                                modifier = Modifier
+                                    .size(280.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                    }
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            Button(
-                onClick = { loadQr() },
-                enabled = !isSaving,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("刷新二维码")
+                // 状态提示
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { loadQr() },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("刷新二维码")
+                }
+            } else {
+                // 粘贴 Cookie 登录
+                Text(
+                    text = "在电脑浏览器登录 https://115.com 后，从开发者工具（F12）或 Cookie 插件复制完整 Cookie（含 UID/CID/SEID/KID 等字段）粘贴到下方：",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = cookieInput,
+                    onValueChange = { cookieInput = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("115 Cookie") },
+                    minLines = 3,
+                    enabled = !isSaving
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        clip.primaryClip?.getItemAt(0)?.text?.let { cookieInput = it.toString() }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("从剪贴板粘贴")
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { loginWithCookie() },
+                    enabled = !isSaving && cookieInput.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isSaving) "登录中…" else "登录")
+                }
             }
         }
     }

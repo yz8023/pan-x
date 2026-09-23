@@ -215,6 +215,18 @@ class P115Api(
 
     // ---------- 网盘空间详情 ----------
 
+    /** 校验 Cookie 是否有效（GET /files/index_info，state=true 即有效） */
+    suspend fun validateCookie(cookie: String): Boolean = withContext(Dispatchers.IO) {
+        val json = executeJson(
+            Request.Builder()
+                .url(P115Constants.INDEX_INFO_URL)
+                .header("User-Agent", P115Constants.WEB_UA)
+                .header("Cookie", cookie)
+                .build()
+        )
+        json.optBoolean("state", false)
+    }
+
     /** 网盘空间详情：GET /files/index_info（需登录 Cookie；data.space_info.all_total.size 总容量 / all_use.size 已用，字节） */
     suspend fun getQuota(cookie: String): QuotaInfo? = withContext(Dispatchers.IO) {
         runCatching {
