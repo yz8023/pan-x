@@ -43,7 +43,7 @@ object ShareLinkParser {
     private val baiduShareIdRegex = Regex("""pan\.baidu\.com/s/(1[A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
     // 百度网盘移动端/分享页短链：https://pan.baidu.com/wap/init?surl=XXXX&pwd=XXXX（surl 即接口所需的 share_id）
     private val baiduWapSurlRegex = Regex("""pan\.baidu\.com/wap/init\?[^"'\s]*surl=([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
-    private val c139ShareIdRegex = Regex("""yun\.139\.com/shareweb/.*?/w/i/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+    private val c139ShareIdRegex = Regex("""yun\.139\.com/share(?:web|wap)/.*?/(?:w/i/|m/i\?)([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
     // 123 云盘分享链接（抓包 + alist 实践综合，文档 §4.1）：
     // - https://www.123pan.com/s/<ShareKey> / https://www.123865.com/s/<ShareKey>
     // - https://<UID>.share.123pan.cn/123pan/<ShareKey>
@@ -100,7 +100,7 @@ object ShareLinkParser {
                 ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)
             return ParsedShare(shareId = surl, pwd = pwd, platform = SharePlatform.BAIDU)
         }
-        // 139（和彩云）链接：https://yun.139.com/shareweb/#/w/i/{linkID} 提取码 xxxx
+        // 139（和彩云）链接：https://yun.139.com/shareweb/#/w/i/{linkID} 或 sharewap/#/m/i?{linkID}，提取码 xxxx
         c139ShareIdRegex.find(url)?.groupValues?.getOrNull(1)?.let { sid ->
             val pwd = pwdInUrlRegex.find(url)?.groupValues?.getOrNull(1)
                 ?: pwdInTextRegex.find(text)?.groupValues?.getOrNull(1)

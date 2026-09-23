@@ -172,8 +172,16 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while implementing 115 粘贴 Cookie 登录（v1.5.1）
 - Category: Troubleshooting & Debugging
 - Instructions:
-  - 版本号已更新：当前 26/"1.5.1"，发布流程与 v1.4.6 一致（release 包 + R8）
   - 115 无公开 token/账密接口：账密需设备签名+RSA（风控封死），token 体系不存在；第三方通用登录方式是粘贴 Cookie（UID/CID/SEID/KID），P115AccountRepository.saveCookie 直接落库
   - Cookie 有效性校验复用 `GET /files/index_info`，state=true 即有效，与 getQuota 共用 INDEX_INFO_URL；登录页 P115LoginScreen 增加 FilterChip 切换「扫码登录/粘贴 Cookie」双模式
   - Compose BOM 2025.10 起 LocalClipboardManager 弃用；代码库统一用 `context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager` 读 primaryClip，勿引入新 API
+
+[Project Knowledge Summary]
+- Date: 2026-09-23
+- Context: Discovered by Agent while fixing 139 分享链接无法识别（v1.5.2）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 版本号已更新：当前 27/"1.5.2"，发布流程与 v1.4.6 一致（release 包 + R8）
+  - 139 分享链接有两种格式：旧 `yun.139.com/shareweb/#/w/i/<id>`、新 `yun.139.com/sharewap/#/m/i?<id>`（App 内复制用新格式）；正则需分别匹配 `/w/i/`（id 前是斜杠）与 `/m/i?`（id 前是问号），共用正则写 `\??` 会让旧格式回溯失败——须写成 `(?:w/i/|m/i\?)`
+  - 139 分享无 token：shareId 即 linkID，stoken 暂存提取码（C139ResolveRepository.createSession）
 

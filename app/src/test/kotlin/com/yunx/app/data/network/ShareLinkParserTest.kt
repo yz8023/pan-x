@@ -78,6 +78,13 @@ class ShareLinkParserTest {
     }
 
     @Test
+    fun c139SharewapHashFormatIsParsed() {
+        val parsed = ShareLinkParser.parse("https://yun.139.com/sharewap/#/m/i?2xTrGa3SxH0p7")!!
+        assertEquals(SharePlatform.C139, parsed.platform)
+        assertEquals("2xTrGa3SxH0p7", parsed.shareId)
+    }
+
+    @Test
     fun lanzouUrlPasswordIsExtracted() {
         val parsed = ShareLinkParser.parse("https://pan.lanzoui.com/iZz123abc 访问码：a1b2")!!
         assertEquals(SharePlatform.LANZOU, parsed.platform)
