@@ -98,10 +98,9 @@ class C139ResolveRepository(private val api: C139Api) : ShareResolveRepository {
         for (i in 0 until 30) {
             kotlinx.coroutines.delay(800)
             val result = api.queryTransferTask(taskId, account, authorization)
-            if (result.done) {
-                newId = result.mapping[file.fid]
-                break
-            }
+            // 命中 idRspInfo.rstId（reason=0000）即为转存成功，比 progress/taskStatus 更可靠
+            newId = result.mapping[file.fid] ?: result.mapping["/${file.fid}"]
+            if (result.done || newId != null) break
         }
         newId ?: throw IllegalStateException("转存超时或失败")
     }.fold(

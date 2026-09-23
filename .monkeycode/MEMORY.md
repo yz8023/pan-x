@@ -185,3 +185,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - 139 分享链接有两种格式：旧 `yun.139.com/shareweb/#/w/i/<id>`、新 `yun.139.com/sharewap/#/m/i?<id>`（App 内复制用新格式）；正则需分别匹配 `/w/i/`（id 前是斜杠）与 `/m/i?`（id 前是问号），共用正则写 `\??` 会让旧格式回溯失败——须写成 `(?:w/i/|m/i\?)`
   - 139 分享无 token：shareId 即 linkID，stoken 暂存提取码（C139ResolveRepository.createSession）
 
+[Project Knowledge Summary]
+- Date: 2026-09-23
+- Context: Discovered by Agent while fixing 139 转存任务成功但提示超时（v1.5.3）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 版本号已更新：当前 28/"1.5.3"
+  - 139 转存「实际成功但 App 报超时」根因：createTransferTask 的 contentInfoList 提交的是 `"/$fid"`（带 / 前缀），queryTransferTask 响应的 idRspInfo[].srcId 同样带 /，而 transferFile 用裸 `file.fid` 查 mapping → key 对不上 newId 恒 null。修复：queryTransferTask 构建 mapping 时 `srcId.removePrefix("/")` 归一化；transferFile 轮询改为 `mapping[file.fid] ?: mapping["/${file.fid}"]`，且「命中 idRspInfo.rstId(reason=0000)」即视为转存成功（比 progress>=100 && taskStatus==2 更可靠）
+  - 139 转存 queryTransferTask 响应结构：data.batchOprTask.{progress,taskStatus}、data.contentList.idRspInfo[]（srcId/rstId/reason，reason=0000 成功）；C139Api 新增 Log.d 埋点 tag=C139Api（raw=data.toString().take(600)）便于后续排查
+

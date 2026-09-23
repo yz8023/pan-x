@@ -19,6 +19,7 @@
 package com.yunx.app.data.network
 
 import android.util.Base64
+import android.util.Log
 import com.yunx.app.data.network.model.DownloadLink
 import com.yunx.app.data.network.model.QuotaInfo
 import com.yunx.app.data.network.model.ShareFile
@@ -60,6 +61,9 @@ class C139Api(
 
     private val jsonMediaType = "application/json;charset=UTF-8".toMediaType()
 
+    private companion object {
+        const val TAG = "C139Api"
+    }
     private val shareAesKey: SecretKeySpec =
         SecretKeySpec(C139Constants.SHARE_AES_KEY.toByteArray(Charsets.UTF_8), "AES")
 
@@ -632,17 +636,25 @@ class C139Api(
             }
             val data = resp.optJSONObject("data") ?: return@withContext C139TransferResult(false, emptyMap())
             val task = data.optJSONObject("batchOprTask")
-            val done = (task?.optInt("progress") ?: 0) >= 100 && (task?.optInt("taskStatus") ?: 0) == 2
+            val progress = task?.optInt("progress") ?: 0
+            val taskStatus = task?.optInt("taskStatus") ?: 0
+            val done = progress >= 100 && taskStatus == 2
             val mapping = buildMap {
                 data.optJSONObject("contentList")?.optJSONArray("idRspInfo")?.let { arr ->
                     for (i in 0 until arr.length()) {
                         val item = arr.optJSONObject(i) ?: continue
                         if (item.optString("reason") == "0000") {
-                            put(item.optString("srcId"), item.optString("rstId"))
+                            // contentInfoList 提交时带 "/" 前缀，srcId 响应同样带 "/"，统一剥掉便于查询
+                            val src = item.optString("srcId").removePrefix("/")
+                            put(src, item.optString("rstId"))
                         }
                     }
                 }
             }
+            Log.d(
+                TAG, "queryTransferTask progress=$progress taskStatus=$taskStatus done=$done mapping=$mapping " +
+                    "raw=${data.toString().take(600)}"
+            )
             C139TransferResult(done, mapping)
         }
 
