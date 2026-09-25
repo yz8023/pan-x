@@ -33,8 +33,8 @@ android {
         applicationId = "com.yunx.app"
         minSdk = 23
         targetSdk = 34
-        versionCode = 28
-        versionName = "1.5.3"
+        versionCode = 29
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

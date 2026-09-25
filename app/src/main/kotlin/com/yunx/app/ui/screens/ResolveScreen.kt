@@ -47,19 +47,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -76,14 +79,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.yunx.app.data.network.LinkCleaner
 import com.yunx.app.data.network.ShareLinkParser
 import com.yunx.app.data.network.SharePlatform
 import com.yunx.app.data.prefs.ResolveHistoryItem
 import com.yunx.app.data.prefs.ResolveHistoryRepository
+import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.ShareDetailScreen
@@ -125,6 +131,10 @@ fun ResolveScreen(
     val downloadError = viewModel.downloadError
     val context = LocalContext.current
 
+    // 隐藏链接提取开关（持久化；开启后解析前自动清除链接中插入的干扰文字）
+    val settingsRepo = remember { SettingsRepository(context.applicationContext) }
+    var cleanHiddenLink by remember { mutableStateOf(settingsRepo.hiddenLinkClean) }
+
     // 最近解析记录：解析成功过的分享链接自动入历史，支持点击重新解析 / 删除
     val historyRepository = remember {
         ResolveHistoryRepository(context.applicationContext)
@@ -135,11 +145,15 @@ fun ResolveScreen(
 
     // 解析并写入历史（仅识别为分享链接时记录；记录保留最近 30 条）
     fun resolveAndRemember(rawLink: String, password: String?) {
-        val parsed = ShareLinkParser.parse(rawLink)
+        val effective = if (cleanHiddenLink) LinkCleaner.clean(rawLink) else rawLink
+        val parsed = ShareLinkParser.parse(effective)
         if (parsed != null) {
-            recentHistory = historyRepository.add(rawLink, password ?: parsed.pwd)
+            recentHistory = historyRepository.add(effective, password ?: parsed.pwd)
         }
-        viewModel.startResolve(rawLink, password)
+        if (cleanHiddenLink && effective != rawLink) {
+            SnackbarController.show("已自动提取链接中的真实地址")
+        }
+        viewModel.startResolve(effective, password)
     }
 
     // 详情页文件列表滚动状态（提升到 AnimatedContent 外层：进入文件夹/返回时列表重建，
@@ -166,7 +180,7 @@ fun ResolveScreen(
             text.isNotBlank() &&
             text != link &&
             text != ignoredClipboard &&
-            ShareLinkParser.parse(text) != null
+            ShareLinkParser.parse(if (cleanHiddenLink) LinkCleaner.clean(text) else text) != null
         ) {
             clipboardSuggestion = text
         }
@@ -209,9 +223,10 @@ fun ResolveScreen(
     }
 
     // 链接变化时自动匹配提取码（用户未手动输入时）
-    LaunchedEffect(link) {
+    LaunchedEffect(link, cleanHiddenLink) {
         if (!pwdEdited && pwd.isEmpty()) {
-            ShareLinkParser.parse(link)?.pwd?.let { pwd = it }
+            val effective = if (cleanHiddenLink) LinkCleaner.clean(link) else link
+            ShareLinkParser.parse(effective)?.pwd?.let { pwd = it }
         }
     }
 
@@ -269,6 +284,33 @@ fun ResolveScreen(
                         pwdEdited = false
                     },
                     onClearPwd = { pwd = "" },
+                    cleanHiddenLink = cleanHiddenLink,
+                    onCleanHiddenLinkChange = {
+                        cleanHiddenLink = it
+                        settingsRepo.hiddenLinkClean = it
+                    },
+                    onReadClipboard = {
+                        val text = readClipboardSafely(context)
+                        if (text.isNullOrBlank()) {
+                            SnackbarController.show("剪贴板为空")
+                        } else {
+                            // 一键读取剪贴板：填入链接与提取码；能识别则直接解析
+                            link = text
+                            clipboardSuggestion = null
+                            ignoredClipboard = text
+                            val effective = if (cleanHiddenLink) LinkCleaner.clean(text) else text
+                            val parsed = ShareLinkParser.parse(effective)
+                            if (parsed != null) {
+                                pwd = parsed.pwd.orEmpty()
+                                pwdEdited = true
+                                resolveAndRemember(text, parsed.pwd)
+                            } else {
+                                pwd = ""
+                                pwdEdited = false
+                                SnackbarController.show("剪贴板内容不是可识别的分享链接")
+                            }
+                        }
+                    },
                     recentHistory = recentHistory,
                     onStartResolve = { rawLink, password ->
                         resolveAndRemember(rawLink, password)
@@ -379,7 +421,10 @@ private fun ResolveInputContent(
     onHistorySelect: (ResolveHistoryItem) -> Unit,
     onRemoveHistory: (ResolveHistoryItem) -> Unit,
     onClearHistory: () -> Unit,
-    onReLogin: (SharePlatform) -> Unit
+    onReLogin: (SharePlatform) -> Unit,
+    cleanHiddenLink: Boolean,
+    onCleanHiddenLinkChange: (Boolean) -> Unit,
+    onReadClipboard: () -> Unit
 ) {
     val isLoading = state is ResolveUiState.Loading
 
@@ -396,6 +441,22 @@ private fun ResolveInputContent(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        // 一键读取剪贴板：填入链接并直接解析（剪贴板为空时仅提示）
+        OutlinedButton(
+            onClick = onReadClipboard,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ContentPaste,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("读取剪贴板，快捷解析")
+        }
 
         OutlinedTextField(
             value = link,
@@ -431,6 +492,29 @@ private fun ResolveInputContent(
             singleLine = true,
             shape = MaterialTheme.shapes.large
         )
+
+        // 隐藏链接提取开关：开启后解析前自动清除链接中插入的干扰文字（表情括号 / 零宽字符 / 杂文）
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "隐藏链接提取",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "自动清除链接中插入的干扰文字，还原真实链接",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = cleanHiddenLink,
+                onCheckedChange = onCleanHiddenLinkChange
+            )
+        }
 
         Button(
             onClick = { onStartResolve(link, pwd.ifBlank { null }) },

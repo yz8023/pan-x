@@ -194,3 +194,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - 139 转存「实际成功但 App 报超时」根因：createTransferTask 的 contentInfoList 提交的是 `"/$fid"`（带 / 前缀），queryTransferTask 响应的 idRspInfo[].srcId 同样带 /，而 transferFile 用裸 `file.fid` 查 mapping → key 对不上 newId 恒 null。修复：queryTransferTask 构建 mapping 时 `srcId.removePrefix("/")` 归一化；transferFile 轮询改为 `mapping[file.fid] ?: mapping["/${file.fid}"]`，且「命中 idRspInfo.rstId(reason=0000)」即视为转存成功（比 progress>=100 && taskStatus==2 更可靠）
   - 139 转存 queryTransferTask 响应结构：data.batchOprTask.{progress,taskStatus}、data.contentList.idRspInfo[]（srcId/rstId/reason，reason=0000 成功）；C139Api 新增 Log.d 埋点 tag=C139Api（raw=data.toString().take(600)）便于后续排查
 
+[Project Knowledge Summary]
+- Date: 2026-09-25
+- Context: Discovered by Agent while building hidden-link extraction feature（v1.6.0 前）
+- Category: Build Methods / Environment Configuration
+- Instructions:
+  - 全新执行环境中无预装 JDK/Android SDK：需 `apt-get install -y openjdk-17-jdk-headless`；SDK 手动装到 `/opt/android-sdk`（cmdline-tools + platform-tools + platforms;android-36 + build-tools;35.0.0），并写 `local.properties`（sdk.dir=/opt/android-sdk）；构建须 `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`，Gradle 9.0.0 由 wrapper 首次运行时下载
+  - 验证命令（后台终端执行）：`./gradlew compileDebugKotlin testDebugUnitTest -Dorg.gradle.jvmargs=-Xmx1536m --max-workers=2`；单元测试结果在 `app/build/test-results/testDebugUnitTest/TEST-*.xml`
+  - material-icons-extended 该版本无 `Icons.AutoMirrored.Outlined.ContentPaste`，粘贴图标用 `Icons.Outlined.ContentPaste`
+

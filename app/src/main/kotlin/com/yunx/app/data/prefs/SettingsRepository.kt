@@ -107,6 +107,13 @@ class SettingsRepository(context: Context) {
             prefs.edit().putInt("app_icon_variant", value.coerceIn(0, 1)).apply()
         }
 
+    /** 解析页「隐藏链接提取」：自动清除链接中插入的干扰文字，还原真实链接（默认开启） */
+    var hiddenLinkClean: Boolean
+        get() = prefs.getBoolean("hidden_link_clean", true)
+        set(value) {
+            prefs.edit().putBoolean("hidden_link_clean", value).apply()
+        }
+
     /** 忽略 SSL 证书校验（抓包调试用，隐藏菜单开启；默认关闭） */
     var ignoreSslCert: Boolean
         get() = prefs.getBoolean("ignore_ssl_cert", false)
