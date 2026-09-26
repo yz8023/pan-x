@@ -120,4 +120,45 @@ class LinkCleanerTest {
             LinkCleaner.clean("https://pan.baidu.com/s/1A【隐藏】bc_123-xy?pwd=9xYz")
         )
     }
+
+    @Test
+    fun fullWidthPunctuationIsMappedBack() {
+        assertEquals(
+            "https://pan.quark.cn/s/Abc123",
+            LinkCleaner.clean("https：／／pan．quark．cn／s／Abc123")
+        )
+    }
+
+    @Test
+    fun fullWidthPunctuationWithTailPasswordIsPreserved() {
+        assertEquals(
+            "链接 https://pan.quark.cn/s/Abc123 提取码：a1B2",
+            LinkCleaner.clean("链接 https：//pan．quark．cn／s／Abc123 提取码：a1B2")
+        )
+    }
+
+    @Test
+    fun fullWidthAndEmojiCombinedAreRecovered() {
+        assertEquals(
+            "https://pan.baidu.com/s/1Abc123-xy?pwd=a1B2",
+            LinkCleaner.clean("https：／／pan．baidu．com／s／1A【表情】bc123-xy？pwd＝a1B2")
+        )
+    }
+
+    @Test
+    fun fullWidthShortLinkStillParsable() {
+        val parsed = ShareLinkParser.parse(
+            LinkCleaner.clean("https：／／pan．quark．cn／s／Abc123 提取码：a1B2")
+        )!!
+        assertEquals(SharePlatform.QUARK, parsed.platform)
+        assertEquals("Abc123", parsed.shareId)
+        assertEquals("a1B2", parsed.pwd)
+    }
+
+    @Test
+    fun fullWidthCleanIsIdempotent() {
+        val input = "https：／／pan．quark．cn／s／xx【表情】xx 提取码：a1B2"
+        val once = LinkCleaner.clean(input)
+        assertEquals(once, LinkCleaner.clean(once))
+    }
 }

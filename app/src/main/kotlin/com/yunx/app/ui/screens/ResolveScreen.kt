@@ -153,7 +153,7 @@ fun ResolveScreen(
         if (cleanHiddenLink && effective != rawLink) {
             SnackbarController.show("已自动提取链接中的真实地址")
         }
-        viewModel.startResolve(effective, password)
+        viewModel.startResolve(effective, password ?: parsed?.pwd)
     }
 
     // 详情页文件列表滚动状态（提升到 AnimatedContent 外层：进入文件夹/返回时列表重建，
@@ -352,19 +352,20 @@ fun ResolveScreen(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            animatedSuggestion?.let { suggestion ->
-                val parsed = ShareLinkParser.parse(suggestion)
+            animatedSuggestion?.let { raw ->
+                val effective = if (cleanHiddenLink) LinkCleaner.clean(raw) else raw
+                val parsed = ShareLinkParser.parse(effective)
                 ClipboardSuggestCard(
                     platformName = parsed?.platform?.let { platformLabel(it) } ?: "网盘",
                     onPaste = {
-                        link = suggestion
+                        link = effective
                         pwd = parsed?.pwd.orEmpty()
                         pwdEdited = true
                         clipboardSuggestion = null
-                        resolveAndRemember(suggestion, parsed?.pwd)
+                        resolveAndRemember(effective, parsed?.pwd)
                     },
                     onDismiss = {
-                        ignoredClipboard = suggestion
+                        ignoredClipboard = raw
                         clipboardSuggestion = null
                     }
                 )

@@ -20,14 +20,16 @@ package com.yunx.app.data.network
 
 /**
  * 隐藏链接提取：部分分享链接为躲避检测会在链接中插入杂文（表情括号、零宽字符、
- * 随机中文等），导致链接被打断而无法被 [ShareLinkParser] 识别。
+ * 随机中文等），或经 QQ/微信转发后 URL 标点被自动转成全角，导致链接被打断而无法被
+ * [ShareLinkParser] 识别。
  *
  * [clean] 在保留原文其余部分（如「提取码：xxxx」文案）的前提下，仅重建被打断的
  * URL 部分：
  * 1. 删除 `[...]` / `【...】` 括号内容；
  * 2. 删除零宽 / 不可见控制字符；
- * 3. 在 URL 区间内按 URL 合法字符白名单剔除插入的杂文；
- * 4. 归一化路径中的重复斜杠（保留 `://`）。
+ * 3. 将全角标点映射回半角（`：／？．％` 等，对应 QQ/微信自动转换）；
+ * 4. 在 URL 区间内按 URL 合法字符白名单剔除插入的杂文；
+ * 5. 归一化路径中的重复斜杠（保留 `://`）。
  *
  * 该转换幂等，对正常链接无副作用，可在解析前安全调用。
  */
@@ -43,6 +45,14 @@ object LinkCleaner {
     /** URL 起始定位 */
     private val urlStartRegex = Regex("""https?://""", RegexOption.IGNORE_CASE)
 
+    /** 全角标点 → 半角映射（QQ/微信转发会把 URL 标点转全角） */
+    private val fullWidthMap = mapOf(
+        '：' to ':', '／' to '/', '？' to '?', '．' to '.', '％' to '%',
+        '～' to '~', '＃' to '#', '＆' to '&', '＝' to '=', '＠' to '@',
+        '＿' to '_', '（' to '(', '）' to ')', '－' to '-', '＋' to '+',
+        '＄' to '$', '＊' to '*', '；' to ';', '，' to ',', '＇' to '\''
+    )
+
     /** 非 URL 合法字符（白名单外全部剔除，参考链接清理工具实现） */
     private val nonUrlCharRegex = Regex("""[^a-zA-Z0-9./:?=&#_@%~$+\-()!]""")
 
@@ -57,13 +67,15 @@ object LinkCleaner {
     fun clean(text: String): String {
         var s = bracketRegex.replace(text, "")
         s = invisibleRegex.replace(s, "")
-        val match = urlStartRegex.find(s) ?: return s
+        // 全角→半角映射副本仅用于定位 URL（scheme 处也可能是全角 `https：//`）；实际替换只在 URL 区间内，尾部原文（如「提取码：」）保持不变
+        val detectText = s.map { fullWidthMap[it] ?: it }.joinToString("")
+        val match = urlStartRegex.find(detectText) ?: return s
         val start = match.range.first
         var end = start
         while (end < s.length && !s[end].isWhitespace()) end++
         if (end == start) return s
         val head = s.substring(0, start)
-        val urlPart = s.substring(start, end)
+        val urlPart = s.substring(start, end).map { fullWidthMap[it] ?: it }.joinToString("")
         val tail = s.substring(end)
         val cleanUrl = duplicateSlashRegex.replace(nonUrlCharRegex.replace(urlPart, ""), "/")
         return head + cleanUrl + tail
